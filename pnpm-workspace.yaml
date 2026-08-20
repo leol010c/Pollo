@@ -1,0 +1,8 @@
+# Not a workspace — there is one package here. pnpm 11 also reads its settings
+# from this file, and this is the only setting the project needs.
+#
+# pnpm does not run a dependency's install scripts unless it is named here, and
+# esbuild wants one: its script places the platform binary that Vite's dev
+# server and build both shell out to.
+allowBuilds:
+  esbuild: true

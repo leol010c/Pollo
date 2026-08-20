@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#070c11" />
+    <meta name="description" content="Two physics dice: one says what, one says where. Throw them, and they decide." />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>Pollo</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..700&family=DM+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <canvas id="table" class="table" aria-hidden="true"></canvas>
+
+    <header class="mark">
+      <span class="mark__word">Pollo</span>
+      <span class="mark__sub">Two dice · what and where</span>
+    </header>
+
+    <div class="prompt" id="prompt">
+      <button class="button" id="throw" type="button">Throw</button>
+      <p class="prompt__hint">or tap the table</p>
+    </div>
+
+    <section class="plate" id="plate" data-open="false" data-where="asking" aria-live="polite">
+      <ol class="strip" id="strip" aria-hidden="true"></ol>
+
+      <div class="plate__body">
+        <img class="plate__art" id="plate-art" alt="" width="252" height="251" />
+        <div class="plate__words">
+          <h2 class="plate__name" id="plate-name"></h2>
+          <p class="plate__line" id="plate-line"></p>
+        </div>
+      </div>
+
+      <div class="where" id="where">
+        <p class="where__label">
+          Where
+          <span class="cluster where__cluster" id="where-pips" aria-hidden="true"></span>
+        </p>
+        <h3 class="where__name" id="where-name"></h3>
+        <p class="where__line" id="where-line"></p>
+      </div>
+
+      <div class="actions">
+        <button class="button button--strong" id="roll-where" type="button">Roll for where</button>
+        <button class="button" id="again" type="button">Throw again</button>
+      </div>
+    </section>
+
+    <noscript class="noscript">
+      This is a die you throw. It needs JavaScript to fall over.
+    </noscript>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
