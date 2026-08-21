@@ -19,7 +19,14 @@ import {
 } from "./physics";
 import { flick, launch, type Launch, type Play } from "./throw";
 import { isStill, SETTLE_TIMEOUT, STILL_STEPS, tolerance } from "./settle";
-import { readFace, upright, type FaceReading } from "./faces";
+import {
+  IDENTITY,
+  multiply,
+  readFace,
+  upright,
+  type FaceReading,
+  type Quat,
+} from "./faces";
 
 export type Phase = "idle" | "rolling" | "settled";
 
@@ -45,17 +52,42 @@ const MAX_NUDGES = 3;
 const NUDGE_LIFT = 3.6;
 const NUDGE_SPIN = 9;
 
+/**
+ * Everything a throw is, gathered in one place.
+ *
+ * The die is given all of it at once and keeps it, which is what makes a throw
+ * repeatable: the same release, the same orientation in the air, and the same
+ * knocks if it comes down on an edge.
+ */
+export interface Wound {
+  from: Launch;
+  orientation: CANNON.Quaternion;
+  /** Feeds the knocks. See stream() at the foot of this file. */
+  seed: number;
+}
+
 /** One die, and the state of the throw it is in the middle of. */
 export class Roller {
   private stillSteps = 0;
   private elapsed = 0;
   private nudges = 0;
   private phase: Phase = "idle";
+  private wound: Wound | null = null;
+  private random: () => number = Math.random;
 
   /** The reading, once the die has stopped. Null while it is moving. */
   result: RollResult | null = null;
   /** Set when the die was righted, so the scene can ease rather than snap. */
   correcting = false;
+  /**
+   * Which way round the die is being held.
+   *
+   * A rotation of the cube onto itself, so it moves the printing and nothing
+   * else — the solid, its shadow and every collision it has are the same
+   * whatever this is. The face that is up is read through it, and the scene
+   * draws through it. Identity for a die nobody has turned.
+   */
+  facing: Quat = IDENTITY;
 
   constructor(
     readonly body: CANNON.Body,
@@ -85,6 +117,8 @@ export class Roller {
     this.phase = "idle";
     this.result = null;
     this.correcting = false;
+    this.facing = IDENTITY;
+    this.wound = null;
   }
 
   /**
@@ -105,21 +139,35 @@ export class Roller {
 
   /** Where the other die is, so a throw does not start on top of it. */
   throwDie(aim?: { x: number; z: number }, clear?: { x: number; z: number }) {
-    this.begin(launch(this.play, aim, clear));
+    this.begin(wind(launch(this.play, aim, clear)));
   }
 
   flickDie(drag: { x: number; z: number }, clear?: { x: number; z: number }) {
-    this.begin(flick(this.play, drag, clear));
+    this.begin(wind(flick(this.play, drag, clear)));
   }
 
-  private begin(from: Launch) {
+  /**
+   * Makes the throw that was just made, again.
+   *
+   * Nothing is drawn between the two, so this is not a second throw — it is the
+   * same one, put back to the moment the hand opened.
+   */
+  rewind() {
+    if (this.wound) this.begin(this.wound);
+  }
+
+  private begin(wound: Wound) {
+    const { from, orientation, seed } = wound;
+    this.wound = wound;
+    this.random = stream(seed);
+
     const die = this.body;
     thaw(die);
     die.position.set(from.position.x, from.position.y, from.position.z);
-    // A uniformly random starting orientation. Without it every throw begins
-    // face-up and the tumble has to undo that, which is exactly the kind of
-    // thing that quietly loads a die.
-    die.quaternion.copy(randomOrientation());
+    // The orientation comes with the throw, and is uniformly random. Without
+    // one every throw would begin face-up and the tumble would have to undo
+    // that, which is exactly the kind of thing that quietly loads a die.
+    die.quaternion.copy(orientation);
     die.velocity.set(from.velocity.x, from.velocity.y, from.velocity.z);
     die.angularVelocity.set(from.angular.x, from.angular.y, from.angular.z);
 
@@ -147,7 +195,7 @@ export class Roller {
     else this.stillSteps = 0;
 
     if (this.stillSteps >= STILL_STEPS) {
-      const reading = readFace(die.quaternion);
+      const reading = this.reading();
       if (reading.clean) return this.finish(reading, false);
       if (this.nudges < MAX_NUDGES) return this.nudge();
       return this.settleFlat();
@@ -156,21 +204,26 @@ export class Roller {
     if (this.elapsed >= SETTLE_TIMEOUT) this.settleFlat();
   }
 
+  /** What the die is showing, read the way it is being held. */
+  private reading(): FaceReading {
+    return readFace(multiply(this.body.quaternion, this.facing));
+  }
+
   /** Knocks a cocked die off its edge and lets it fall again. */
   private nudge() {
     const die = this.body;
     die.applyImpulse(
       new CANNON.Vec3(
-        (Math.random() - 0.5) * 1.2,
+        (this.random() - 0.5) * 1.2,
         NUDGE_LIFT,
-        (Math.random() - 0.5) * 1.2,
+        (this.random() - 0.5) * 1.2,
       ),
       new CANNON.Vec3(0, 0, 0),
     );
     die.angularVelocity.set(
-      (Math.random() - 0.5) * NUDGE_SPIN,
-      (Math.random() - 0.5) * NUDGE_SPIN,
-      (Math.random() - 0.5) * NUDGE_SPIN,
+      (this.random() - 0.5) * NUDGE_SPIN,
+      (this.random() - 0.5) * NUDGE_SPIN,
+      (this.random() - 0.5) * NUDGE_SPIN,
     );
     this.nudges++;
     this.stillSteps = 0;
@@ -192,7 +245,7 @@ export class Roller {
     // neighbour. Only a die that somehow got under the cloth is lifted.
     die.position.y = Math.max(die.position.y, DIE_HALF);
     this.correcting = true;
-    this.finish(readFace(die.quaternion), true);
+    this.finish(this.reading(), true);
   }
 
   private finish(reading: FaceReading, corrected: boolean) {
@@ -240,6 +293,32 @@ export class Dice {
     return this.rollers.some((roller) => roller.state === "rolling");
   }
 
+  /**
+   * Runs the throw that has just started all the way to its end, without
+   * drawing any of it, and puts the die back on the same throw.
+   *
+   * Hands back the face the throw is going to finish on — an index into
+   * FACE_NORMALS, the solid's own, before any question of what is printed
+   * where. The solver has no randomness in it and starts each step from the
+   * bodies alone, and the throw is wound to the same seed both times, so the
+   * roll that is then watched is this one and not another like it.
+   *
+   * A throw is a couple of hundred steps and takes well under a millisecond,
+   * inside the same tick as the release. Nothing is drawn in between.
+   */
+  foretell(roller: Roller): number {
+    const limit = Math.ceil((SETTLE_TIMEOUT + 1) / PHYSICS_STEP);
+
+    for (let step = 0; step < limit && roller.state === "rolling"; step++) {
+      this.table.world.step(PHYSICS_STEP);
+      for (const other of this.rollers) other.observe();
+    }
+
+    const landed = readFace(roller.body.quaternion).index;
+    roller.rewind();
+    return landed;
+  }
+
   step(dt: number) {
     // A tab that was in the background comes back with a huge delta; catching
     // all of it up at once is a throw nobody saw.
@@ -251,6 +330,33 @@ export class Dice {
       for (const roller of this.rollers) roller.observe();
     }
   }
+}
+
+/** A fresh throw: a release, the turn the die leaves the hand with, and knocks. */
+function wind(from: Launch): Wound {
+  return {
+    from,
+    orientation: randomOrientation(),
+    seed: (Math.random() * 0x100000000) >>> 0,
+  };
+}
+
+/**
+ * A throw's own small supply of random numbers.
+ *
+ * Only the knocks given to a die that stopped on its edge draw from it — about
+ * one throw in two hundred — but they have to be the same knocks when the same
+ * throw is made twice, and Math.random cannot promise that. Mulberry32: short,
+ * and far better distributed than anything shorter.
+ */
+function stream(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 0x100000000;
+  };
 }
 
 /** Shoemake's uniform random rotation. */

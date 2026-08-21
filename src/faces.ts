@@ -97,13 +97,52 @@ export function readFace(q: Quat): FaceReading {
   };
 }
 
-function multiply(a: Quat, b: Quat): Quat {
+export const IDENTITY: Quat = { x: 0, y: 0, z: 0, w: 1 };
+
+/** a then b, applied to a vector as rotate(multiply(a, b), v). */
+export function multiply(a: Quat, b: Quat): Quat {
   return {
     x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
     y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
     z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
     w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
   };
+}
+
+/**
+ * The shortest turn that takes one direction onto another.
+ *
+ * Both are unit vectors. Directly opposite ones have no shortest turn — every
+ * half turn about something perpendicular does it — so one perpendicular is
+ * picked, which for the axes this is called with is again an axis.
+ */
+function arc(from: Vec3Like, to: Vec3Like): Quat {
+  const dot = from.x * to.x + from.y * to.y + from.z * to.z;
+  if (dot > 0.999999) return IDENTITY;
+
+  let axis = {
+    x: from.y * to.z - from.z * to.y,
+    y: from.z * to.x - from.x * to.z,
+    z: from.x * to.y - from.y * to.x,
+  };
+  let w = 1 + dot;
+
+  if (dot < -0.999999) {
+    // Half a turn about whichever axis `from` leans on least.
+    const helper =
+      Math.abs(from.x) < 0.5
+        ? { x: 1, y: 0, z: 0 }
+        : { x: 0, y: 1, z: 0 };
+    axis = {
+      x: from.y * helper.z - from.z * helper.y,
+      y: from.z * helper.x - from.x * helper.z,
+      z: from.x * helper.y - from.y * helper.x,
+    };
+    w = 0;
+  }
+
+  const len = Math.hypot(axis.x, axis.y, axis.z, w) || 1;
+  return { x: axis.x / len, y: axis.y / len, z: axis.z / len, w: w / len };
 }
 
 /**
@@ -115,25 +154,27 @@ function multiply(a: Quat, b: Quat): Quat {
  */
 export function upright(q: Quat): Quat {
   const { index } = readFace(q);
-  const n = rotate(q, FACE_NORMALS[index]!);
+  // Already there, or exactly upside down — which cannot happen for a winning
+  // normal, since it would have lost to its opposite.
+  return multiply(arc(rotate(q, FACE_NORMALS[index]!), UP), q);
+}
 
-  const dot = n.x * UP.x + n.y * UP.y + n.z * UP.z;
-  // Already there, or exactly upside down (which cannot happen for a winning
-  // normal, since it would have lost to its opposite).
-  if (dot > 0.999999) return { ...q };
+/** Which face of the die carries a value. */
+export function faceOf(value: number): number {
+  const index = FACE_VALUES.indexOf(value);
+  if (index < 0) throw new Error(`No face carries ${value}`);
+  return index;
+}
 
-  // Shortest arc from n to up.
-  const axis = {
-    x: n.y * UP.z - n.z * UP.y,
-    y: n.z * UP.x - n.x * UP.z,
-    z: n.x * UP.y - n.y * UP.x,
-  };
-  const arc: Quat = { x: axis.x, y: axis.y, z: axis.z, w: 1 + dot };
-  const len = Math.hypot(arc.x, arc.y, arc.z, arc.w) || 1;
-  arc.x /= len;
-  arc.y /= len;
-  arc.z /= len;
-  arc.w /= len;
-
-  return multiply(arc, q);
+/**
+ * Turning the die in the hand: the rotation that carries one face round to
+ * where another one is now.
+ *
+ * A quarter turn, a half turn, or nothing — always one of the twenty-four ways
+ * a cube can be set down, so it maps the solid exactly onto itself. Applied on
+ * the right of an orientation it moves the printing and leaves the shape, the
+ * silhouette and the shadow untouched.
+ */
+export function turn(from: number, to: number): Quat {
+  return arc(FACE_NORMALS[from]!, FACE_NORMALS[to]!);
 }

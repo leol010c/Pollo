@@ -11,7 +11,7 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type * as CANNON from "cannon-es";
-import { FACE_VALUES } from "./faces";
+import { FACE_VALUES, type Quat } from "./faces";
 import { DIE_HALF } from "./physics";
 import { positionFor } from "./positions";
 import { locationFor } from "./locations";
@@ -146,8 +146,12 @@ export interface Die {
    * Copies the body's pose onto the mesh. When the die had to be laid flat, the
    * mesh eases into the new orientation instead of cutting to it — the fix is
    * rare, and it should look like the die tipping over rather than like a bug.
+   *
+   * `facing` is which way round the die is being held: a turn of the cube onto
+   * itself, so it moves the printing and leaves the solid exactly where the
+   * physics put it.
    */
-  sync(body: CANNON.Body, easing: boolean): void;
+  sync(body: CANNON.Body, facing: Quat, easing: boolean): void;
 }
 
 function build(
@@ -177,10 +181,11 @@ function build(
   mesh.position.set(0, DIE_HALF, 0);
 
   const target = new THREE.Quaternion();
+  const held = new THREE.Quaternion();
 
   return {
     mesh,
-    sync(body, easing) {
+    sync(body, facing, easing) {
       mesh.position.set(body.position.x, body.position.y, body.position.z);
       target.set(
         body.quaternion.x,
@@ -188,6 +193,8 @@ function build(
         body.quaternion.z,
         body.quaternion.w,
       );
+      held.set(facing.x, facing.y, facing.z, facing.w);
+      target.multiply(held);
       if (easing) mesh.quaternion.slerp(target, 0.18);
       else mesh.quaternion.copy(target);
     },

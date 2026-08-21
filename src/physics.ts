@@ -88,11 +88,37 @@ export function freeze(die: CANNON.Body): void {
   die.updateMassProperties();
 }
 
-/** Hands a frozen die back to gravity, for its next throw. */
+/**
+ * Hands a frozen die back to gravity, for its next throw.
+ *
+ * Measured square and at the origin, which matters more than it looks. The
+ * solver works a body's inertia out from the box its shape takes up in the
+ * *world*, so a die asked the question while lying at an angle is handed the
+ * inertia of a bigger, lopsided brick, and one asked far from the middle of the
+ * table is handed a slightly different one again — the two ends of the box are
+ * large numbers being subtracted. Neither is a fact about a die. A cube resists
+ * turning the same amount about every axis wherever it is sitting, so it is
+ * lifted to the middle of the table and squared up for the measurement and put
+ * straight back.
+ *
+ * The throw is the better for it: dice that tumble the same however they were
+ * left lying settle sooner and land cocked less often. And it is what makes the
+ * same throw twice the same throw, which the loaded die in cheat.ts is built
+ * on.
+ */
 export function thaw(die: CANNON.Body): void {
+  const at = die.position.clone();
+  const held = die.quaternion.clone();
+  die.position.setZero();
+  die.quaternion.set(0, 0, 0, 1);
+
   die.mass = DIE_MASS;
   die.type = CANNON.Body.DYNAMIC;
   die.updateMassProperties();
+
+  die.position.copy(at);
+  die.quaternion.copy(held);
+  die.aabbNeedsUpdate = true;
   die.wakeUp();
 }
 

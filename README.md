@@ -37,6 +37,7 @@ src/settle.ts    when a throw counts as over
 src/faces.ts     which face is up, read from the quaternion
 src/framing.ts   how big the table is and where the camera stands
 src/roll.ts      Dice owns the world and the clock; Roller owns one die
+src/cheat.ts     loading the dice without touching the throw
 ```
 
 **Everything you can see** is on top of that:
@@ -47,6 +48,7 @@ src/die.ts         the rounded cube, printed with pictures or with words
 src/positions.ts   what each face of the light die is called
 src/locations.ts   what each face of the dark die is called
 src/ui.ts          the placard, and the chrome around the canvas
+src/menu.ts        the menu nobody is meant to find
 src/main.ts        the loop, and the only file that knows about both halves
 ```
 
@@ -82,10 +84,43 @@ Drop a PNG into `src/assets/dice/` and add a line to `POSITIONS` in
 in `src/locations.ts`. Either die has six faces, though, so a seventh entry
 means deciding what to do about that — it is not a drop-in.
 
+### The loaded dice
+
+Three fast taps on the wordmark open a menu with the twelve faces on it. Tick
+some, and the dice land on those from then on. It is meant to be invisible to
+anyone watching the table, which rules out every obvious way of doing it: a die
+that is placed, eased, slowed or spun on the way down is a die you can see is
+being helped.
+
+So the throw is not touched at all. The die is released exactly as always, that
+throw is run to its end in the same tick with nothing drawn — `foretell` in
+`roll.ts`, a couple of hundred steps and well under a millisecond — the die is
+put back on the same throw, and the *printing* is turned round so the wanted
+face is the one the throw was already going to finish on. Then it rolls, for
+real, and everything anybody sees is what the solver did.
+
+It works because a die is a symmetric solid: which picture is on which face has
+no bearing on how it falls. The turn is one of the twenty-four ways a cube can
+be set down, so the shape, the shadow and the sum of seven across opposite
+faces all survive it. It is the same die, held a different way round, at the
+one instant its pose jumps anyway.
+
+Two things had to become true first. A throw is now a `Wound` — a release, a
+starting orientation, and a seed the knocks come from — so the same throw made
+twice is the same throw rather than one like it. And `thaw` measures the die
+square and at the origin, because the solver reads a body's inertia off the box
+its shape takes up in the *world*: a die measured while lying at an angle, or
+far from the middle of the table, was handed a different one every time. Fixing
+that made the honest dice better too — they settle sooner and land cocked a
+third as often as they used to.
+
+Nothing is written down. Close the page and it is a fair die again.
+
 ## Checking it
 
 ```bash
-pnpm verify      # thousands of throws, headless
+pnpm verify        # thousands of throws, headless
+pnpm verify:cheat  # the same again, with the dice loaded
 pnpm typecheck
 pnpm build
 ```
@@ -102,7 +137,14 @@ table, a die that has to be laid flat too often, a die that favours a face
 under two seconds, so there is no reason not to run it after touching anything
 in the first half of the list above.
 
-The numbers it is currently holding: half of all throws settle inside two
-seconds and nine in ten inside two and a half, about one throw in a hundred has
-to be laid flat, and over twenty thousand throws of each die neither left the
-table, overlapped its neighbour, or favoured a face.
+`pnpm verify:cheat` runs the same throws with `rig()` in the middle of them, and
+fails on three things: a loaded throw that did not land on one of the faces it
+was told to, the *solid* favouring a side while it is being loaded — the
+printing may be rigged, the physics may not — and a throw thrown twice from the
+same wound state going anywhere different, compared step by step rather than
+just at the end. Three thousand loaded throws, no misses.
+
+The numbers they are currently holding: half of all throws settle inside two
+seconds and nine in ten inside two and a half, about one throw in two hundred
+has to be laid flat, and over twenty thousand throws of each die neither left
+the table, overlapped its neighbour, or favoured a face.

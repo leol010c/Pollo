@@ -11,8 +11,10 @@ import { createStage } from "./scene";
 import { createLocationDie, createPositionDie } from "./die";
 import { Dice, type Roller } from "./roll";
 import { createChrome } from "./ui";
+import { createMenu } from "./menu";
+import { rig } from "./cheat";
 import { frame } from "./framing";
-import { readFace } from "./faces";
+import { multiply, readFace } from "./faces";
 import { DIE_HALF } from "./physics";
 
 /** A press this short and this still is a tap; anything more is a flick. */
@@ -29,6 +31,7 @@ async function start() {
   const canvas = document.getElementById("table") as HTMLCanvasElement;
   const stage = createStage(canvas);
   const chrome = createChrome();
+  const menu = createMenu();
 
   const dice = new Dice(frame(window.innerWidth, window.innerHeight).play);
   const what = { roller: dice.add(), die: await createPositionDie(stage.renderer) };
@@ -47,7 +50,7 @@ async function start() {
   const play = resize();
   what.roller.rest({ x: -KERB, z: play.halfZ * 0.28 });
   where.roller.rest({ x: KERB, z: play.halfZ * 0.28 });
-  for (const { roller, die } of pair) die.sync(roller.body, false);
+  for (const { roller, die } of pair) die.sync(roller.body, roller.facing, false);
 
   /** What is currently printed on the placard. */
   let round: { position: number | null; location: number | null } = {
@@ -80,6 +83,10 @@ async function start() {
 
     if (drag) thrown.flickDie(drag, clearOf(other));
     else thrown.throwDie(aim, clearOf(other));
+
+    // Nothing has been drawn yet, and this is the only moment at which the die
+    // can be turned without anybody seeing it turn.
+    rig(dice, thrown, menu.allowed(which));
   }
 
   /**
@@ -98,6 +105,7 @@ async function start() {
 
   document.addEventListener("keydown", (event) => {
     if (event.key !== " " && event.key !== "Enter") return;
+    if (menu.open) return;
     // The buttons already answer both keys themselves.
     if (document.activeElement instanceof HTMLButtonElement) return;
     if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -161,7 +169,7 @@ async function start() {
     last = now;
 
     dice.step(dt);
-    for (const { roller, die } of pair) die.sync(roller.body, roller.correcting);
+    for (const { roller, die } of pair) die.sync(roller.body, roller.facing, roller.correcting);
     post(now);
 
     stage.render();
@@ -182,8 +190,8 @@ async function start() {
         rolling: () => dice.rolling || inFlight !== null,
         round: () => ({ ...round }),
         upFaces: () => ({
-          what: readFace(what.roller.body.quaternion).value,
-          where: readFace(where.roller.body.quaternion).value,
+          what: readFace(multiply(what.roller.body.quaternion, what.roller.facing)).value,
+          where: readFace(multiply(where.roller.body.quaternion, where.roller.facing)).value,
         }),
         gap: () =>
           Math.hypot(

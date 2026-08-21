@@ -71,7 +71,11 @@ body {
   left: var(--edge);
   display: grid;
   gap: 0.34rem;
-  pointer-events: none;
+  /* It takes a press, three of them in fact — see the foot of this file. */
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
 }
 
 .mark__word {
@@ -501,4 +505,147 @@ body.is-open .prompt {
     font-size: 0.78rem;
     max-width: 46ch;
   }
+}
+
+/* ---- the menu nobody is meant to find --------------------------------- */
+
+/*
+ * Three fast taps on the wordmark. Nothing here appears on the page until
+ * those have happened, and it is built at that moment rather than sitting in
+ * the markup waiting.
+ */
+
+.rig {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  padding: var(--edge);
+  background: rgb(7 12 17 / 0.74);
+  backdrop-filter: blur(14px);
+
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 220ms var(--lift),
+    visibility 0s linear 220ms;
+}
+
+.rig[data-open="true"] {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+.rig__sheet {
+  width: min(100%, 27rem);
+  max-height: 100%;
+  overflow-y: auto;
+  display: grid;
+  justify-items: center;
+  gap: 1.05rem;
+  padding: 1.4rem 1.15rem 1.5rem;
+
+  background: var(--ink);
+  border: 1px solid rgb(242 239 233 / 0.16);
+  border-radius: 1.1rem;
+
+  transform: translateY(0.7rem);
+  transition: transform 260ms var(--lift);
+}
+
+.rig[data-open="true"] .rig__sheet {
+  transform: translateY(0);
+}
+
+.rig__label,
+.rig__title,
+.rig__note {
+  margin: 0;
+  font-family: var(--mono);
+  font-weight: 400;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.rig__label {
+  font-size: 0.72rem;
+  letter-spacing: 0.28em;
+  color: var(--bone);
+}
+
+.rig__title {
+  font-size: 0.58rem;
+  letter-spacing: 0.24em;
+  color: var(--slate);
+}
+
+.rig__note {
+  font-size: 0.58rem;
+  letter-spacing: 0.16em;
+  color: rgb(126 151 166 / 0.75);
+}
+
+.rig__set {
+  width: 100%;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.rig__chips {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+/* Lit is allowed. Nothing lit is a die that has not been touched. */
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.6rem 0.65rem;
+  text-align: left;
+
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  font-weight: 400;
+  line-height: 1.15;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: rgb(242 239 233 / 0.55);
+
+  background: transparent;
+  border: 1px solid rgb(242 239 233 / 0.16);
+  border-radius: 0.7rem;
+  cursor: pointer;
+  transition:
+    background-color 160ms var(--lift),
+    border-color 160ms var(--lift),
+    color 160ms var(--lift);
+}
+
+.chip:hover {
+  border-color: rgb(242 239 233 / 0.34);
+  color: var(--bone);
+}
+
+.chip[aria-pressed="true"] {
+  color: var(--bone);
+  border-color: rgb(46 179 230 / 0.7);
+  background: rgb(46 179 230 / 0.12);
+}
+
+.chip .cluster {
+  flex: none;
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.chip[aria-pressed="true"] .cluster {
+  opacity: 1;
+}
+
+.chip[aria-pressed="true"] .cluster i[data-pip="true"] {
+  background: var(--cyan);
 }

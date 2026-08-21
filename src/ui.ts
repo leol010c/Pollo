@@ -22,7 +22,7 @@ function must<T extends HTMLElement>(id: string): T {
 }
 
 /** Nine cells, some of them lit — one three-by-three pip cluster. */
-function fillCluster(item: HTMLElement, value: number) {
+export function fillCluster(item: HTMLElement, value: number) {
   const lit = new Set(pipCells(value));
   item.replaceChildren(
     ...Array.from({ length: 9 }, (_, cell) => {
