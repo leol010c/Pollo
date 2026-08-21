@@ -52,6 +52,13 @@ src/menu.ts        the menu nobody is meant to find
 src/main.ts        the loop, and the only file that knows about both halves
 ```
 
+The loop only draws when there is something to draw. Between throws the table
+is still — same dice, same light, same camera — so it stops rendering a second
+and a half after the last thing moved, and starts again the moment anything
+does. A screen dense enough to need no multisampling does not get any, either.
+Both are for the phone: a phone drawing a picture that is not changing gets
+warm, and a warm phone is a slow one by the next throw.
+
 The split is not tidiness. `scripts/verify-roll.ts` imports the first half and
 throws the dice thousands of times with no screen attached, which only proves
 something about the page because it is running the page's own code.
@@ -86,8 +93,10 @@ means deciding what to do about that — it is not a drop-in.
 
 ### The loaded dice
 
-Three fast taps on the wordmark open a menu with the twelve faces on it. Tick
-some, and the dice land on those from then on. It is meant to be invisible to
+Three fast taps on the wordmark open a menu with the twelve faces on it — or
+one press held on it, since tapping twice quickly is also how a phone is told
+to zoom and some of them take it as read before the third tap lands. Tick some
+faces, and the dice land on those from then on. It is meant to be invisible to
 anyone watching the table, which rules out every obvious way of doing it: a die
 that is placed, eased, slowed or spun on the way down is a die you can see is
 being helped.

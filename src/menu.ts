@@ -18,8 +18,18 @@ import { LOCATIONS } from "./locations";
 import { fillCluster } from "./ui";
 
 /** Three presses inside this many milliseconds. */
-const RUN = 700;
+const RUN = 800;
 const TAPS = 3;
+
+/**
+ * Or one press held this long.
+ *
+ * Three fast taps is the gesture that was asked for, and it is the one a phone
+ * fights hardest: tapping twice quickly is how a browser is told to zoom, and
+ * some of them take it as read before the third tap arrives. Holding the mark
+ * down does the same job and there is nothing else it could mean.
+ */
+const HOLD = 550;
 
 export type Which = "what" | "where";
 
@@ -142,14 +152,42 @@ export function createMenu(): Menu {
   const mark = document.querySelector(".mark");
   if (mark) {
     let taps: number[] = [];
+    let held: ReturnType<typeof setTimeout> | undefined;
+
+    const toggle = () => {
+      taps = [];
+      if (open) close();
+      else show();
+    };
+
+    const forget = () => {
+      clearTimeout(held);
+      held = undefined;
+    };
+
     mark.addEventListener("pointerdown", () => {
       const now = performance.now();
       taps = taps.filter((at) => now - at < RUN);
       taps.push(now);
-      if (taps.length < TAPS) return;
-      taps = [];
-      if (open) close();
-      else show();
+
+      forget();
+      held = setTimeout(toggle, HOLD);
+
+      if (taps.length >= TAPS) {
+        forget();
+        toggle();
+      }
+    });
+
+    for (const done of ["pointerup", "pointercancel", "pointerleave"]) {
+      mark.addEventListener(done, forget);
+    }
+
+    // The one thing that stops a phone zooming on the second of three fast
+    // taps. touch-action alone is advice; this is not, and there is no click on
+    // the mark to lose — the taps are already counted by the time it fires.
+    mark.addEventListener("touchend", (event) => event.preventDefault(), {
+      passive: false,
     });
   }
 

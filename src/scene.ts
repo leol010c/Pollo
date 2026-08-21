@@ -61,14 +61,26 @@ export interface Stage {
   aimAt(clientX: number, clientY: number): { x: number; z: number };
 }
 
+/**
+ * A screen that is already drawing every pixel twice over does not also need
+ * multisampling — the density is doing that job, and on a phone the second
+ * pass is the difference between a throw that runs and one that stutters.
+ */
+const DENSE = window.devicePixelRatio >= 2;
+
+/** Phones get the smaller shadow map. It is spread over a felt this big. */
+const SHADOW_MAP = Math.min(window.screen.width, window.screen.height) < 640 ? 1024 : 2048;
+
 export function createStage(canvas: HTMLCanvasElement): Stage {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: !DENSE });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // PCFSoft is deprecated and quietly downgraded to this anyway; asking for it
+  // by name saves the warning and says what is actually being drawn.
+  renderer.shadowMap.type = THREE.PCFShadowMap;
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(INK);
@@ -87,7 +99,7 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
   /** The lamp over the table, and the only thing casting a shadow. */
   const key = new THREE.DirectionalLight(0xeaf4ff, 2.2);
   key.castShadow = true;
-  key.shadow.mapSize.set(2048, 2048);
+  key.shadow.mapSize.set(SHADOW_MAP, SHADOW_MAP);
   key.shadow.bias = -0.0006;
   key.shadow.normalBias = 0.02;
   key.shadow.radius = 3;

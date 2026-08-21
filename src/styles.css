@@ -71,10 +71,19 @@ body {
   left: var(--edge);
   display: grid;
   gap: 0.34rem;
-  /* It takes a press, three of them in fact — see the foot of this file. */
+  /* It takes a press, three of them in fact — see the foot of this file. A
+     bigger target than the words themselves, and none of the things a phone
+     normally does with a word held down or hit twice. */
+  padding: 0.5rem 1.1rem 0.6rem;
+  margin: -0.5rem -1.1rem -0.6rem;
   cursor: default;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+}
+
+.mark * {
   touch-action: manipulation;
 }
 

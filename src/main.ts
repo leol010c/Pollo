@@ -24,6 +24,17 @@ const TAP_PIXELS = 12;
 /** A beat between the dice stopping and the placard, so the stop registers. */
 const REVEAL_DELAY = 220;
 
+/**
+ * How long the scene keeps drawing after everything has stopped moving.
+ *
+ * Between throws the table is completely still — same dice, same light, same
+ * camera — and drawing that sixty times a second is a phone getting warm over a
+ * picture that is not changing, which is what makes the throw after it stutter.
+ * The tail is for the die that had to be laid flat: the physics is finished
+ * before the scene has eased it the last few degrees.
+ */
+const COAST = 1500;
+
 /** Where the two dice are left sitting when the page opens. */
 const KERB = 0.95;
 
@@ -39,13 +50,23 @@ async function start() {
   const pair = [what, where];
   for (const { die } of pair) stage.scene.add(die.mesh);
 
+  /** Everything still worth drawing has to be drawn before this. */
+  let drawUntil = performance.now() + COAST;
+
   function resize() {
     const play = stage.resize(window.innerWidth, window.innerHeight);
     dice.setPlay(play);
+    drawUntil = performance.now() + COAST;
     return play;
   }
   window.addEventListener("resize", resize);
   window.addEventListener("orientationchange", resize);
+
+  // Coming back to a page that was in the background, which a phone may have
+  // taken the last drawn frame away from while it was gone.
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) drawUntil = performance.now() + COAST;
+  });
 
   const play = resize();
   what.roller.rest({ x: -KERB, z: play.halfZ * 0.28 });
@@ -172,7 +193,9 @@ async function start() {
     for (const { roller, die } of pair) die.sync(roller.body, roller.facing, roller.correcting);
     post(now);
 
-    stage.render();
+    if (dice.rolling || inFlight !== null) drawUntil = now + COAST;
+    if (now <= drawUntil) stage.render();
+
     requestAnimationFrame(tick);
   }
 
