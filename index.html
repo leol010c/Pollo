@@ -22,7 +22,10 @@
 
     <header class="mark">
       <span class="mark__word">Pollo</span>
-      <span class="mark__sub">Two dice · what and where</span>
+      <div class="switch" id="dice-switch" role="group" aria-label="How many dice">
+        <button class="switch__opt" id="one-die" type="button" aria-pressed="true">One die</button>
+        <button class="switch__opt" id="two-dice" type="button" aria-pressed="false">Two dice</button>
+      </div>
     </header>
 
     <div class="prompt" id="prompt">
@@ -30,29 +33,43 @@
       <p class="prompt__hint">or tap the table</p>
     </div>
 
-    <section class="plate" id="plate" data-open="false" data-where="asking" aria-live="polite">
+    <section
+      class="plate"
+      id="plate"
+      data-open="false"
+      data-where="asking"
+      data-up="false"
+      aria-live="polite"
+    >
       <ol class="strip" id="strip" aria-hidden="true"></ol>
 
-      <div class="plate__body">
-        <img class="plate__art" id="plate-art" alt="" width="252" height="251" />
-        <div class="plate__words">
-          <h2 class="plate__name" id="plate-name"></h2>
-          <p class="plate__line" id="plate-line"></p>
+      <figure class="card card--what" id="card-what">
+        <div class="card__face">
+          <span class="cluster card__pips" id="what-pips" aria-hidden="true"></span>
+          <img class="card__art" id="plate-art" alt="" width="252" height="251" />
         </div>
+      </figure>
+
+      <div class="plate__words">
+        <h2 class="plate__name" id="plate-name"></h2>
+        <p class="plate__line" id="plate-line"></p>
       </div>
 
-      <div class="where" id="where">
-        <p class="where__label">
-          Where
-          <span class="cluster where__cluster" id="where-pips" aria-hidden="true"></span>
-        </p>
-        <h3 class="where__name" id="where-name"></h3>
-        <p class="where__line" id="where-line"></p>
-      </div>
+      <p class="where__label">Where</p>
+
+      <figure class="card card--where" id="card-where">
+        <div class="card__face">
+          <span class="cluster card__pips" id="where-pips" aria-hidden="true"></span>
+          <span class="card__word" id="where-name"></span>
+        </div>
+      </figure>
+
+      <p class="where__line" id="where-line"></p>
 
       <div class="actions">
         <button class="button button--strong" id="roll-where" type="button">Roll for where</button>
         <button class="button" id="again" type="button">Throw again</button>
+        <button class="button button--quiet" id="lay" type="button">Lay it down</button>
       </div>
     </section>
 

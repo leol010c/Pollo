@@ -12,6 +12,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type * as CANNON from "cannon-es";
 import { FACE_VALUES, type Quat } from "./faces";
+import { easeOut, type Hold } from "./present";
 import { DIE_HALF } from "./physics";
 import { positionFor } from "./positions";
 import { locationFor } from "./locations";
@@ -37,6 +38,35 @@ const PIP_RADIUS = PIP_BOX * 0.125;
 
 /** Softens the bevel so what is printed does not wrap around a hard edge. */
 const CORNER_RADIUS = 0.085;
+
+/**
+ * How long a die takes to leave the table, in seconds.
+ *
+ * A die is dismissed at the same instant the next one is released, and a throw
+ * spends about half a second in the air before it touches anything, so the one
+ * going is gone well before the one coming lands. Nothing waits on this.
+ */
+const FADE_SECONDS = 0.26;
+
+/** How far a leaving die shrinks, so its shadow goes with it. */
+const GONE_SCALE = 0.86;
+
+/** How long the die takes to rise off the felt and turn its face to you. */
+const RISE_SECONDS = 0.62;
+
+/** And to go back down, which is a plainer move than coming up was. */
+const LAY_SECONDS = 0.44;
+
+/**
+ * A turn thrown in on the way up.
+ *
+ * The shortest path between two orientations is correct and completely
+ * undramatic — the die turns the least it can get away with. Winding a whole
+ * extra revolution in at the start and unwinding it across the rise makes the
+ * reveal a small performance instead. A turn of 2π is the identity, so both
+ * ends of the move are exactly where they would have been.
+ */
+const FLOURISH_TURNS = 1;
 
 /** Type on a face: heavy, wide, and set to whatever width is left. */
 const WORD_FONT = '700 128px Archivo, "Helvetica Neue", Helvetica, Arial, sans-serif';
@@ -143,6 +173,33 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 export interface Die {
   mesh: THREE.Mesh;
   /**
+   * Lifts the die off the felt to hold its landed face square-on to the camera.
+   *
+   * Nothing about the physics changes: the body stays frozen where it landed,
+   * and this is the picture of it going up. There is nothing else on the table
+   * for it to have to still be part of.
+   */
+  present(hold: Hold, flourish: boolean): void;
+  /** Puts it back down where the body has been sitting all along. */
+  lay(): void;
+  /** Drops the hold at once, for a die that is being thrown again. */
+  release(): void;
+  /** True once the rise is over and the die is holding still to be read. */
+  readonly arrived: boolean;
+  /** True whenever the die is anywhere other than where its body is. */
+  readonly held: boolean;
+  /** Puts the die back on the table at full strength. */
+  appear(): void;
+  /**
+   * Starts it leaving. The body is off the felt already; this is the picture.
+   * `now` takes it away without the fade, for a die that was never seen.
+   */
+  dismiss(now?: boolean): void;
+  /** Advances the fade by one frame. */
+  advance(dt: number): void;
+  /** True while there is still something of it left to draw. */
+  readonly leaving: boolean;
+  /**
    * Copies the body's pose onto the mesh. When the die had to be laid flat, the
    * mesh eases into the new orientation instead of cutting to it — the fix is
    * rare, and it should look like the die tipping over rather than like a bug.
@@ -170,6 +227,10 @@ function build(
       roughness: ink.roughness,
       metalness: 0.02,
       envMapIntensity: 0.55,
+      // Only ever anything but 1 while the die is leaving, but declared here:
+      // turning transparency on partway through costs a shader compile, and a
+      // stutter at exactly the moment of a throw is the one place it shows.
+      transparent: true,
     });
   });
 
@@ -182,11 +243,113 @@ function build(
 
   const target = new THREE.Quaternion();
   const held = new THREE.Quaternion();
+  const resting = new THREE.Vector3();
+
+  /** 1 while the die is on the table, 0 once it has gone. */
+  let strength = 1;
+  let going = false;
+
+  /** Where the die is being drawn: on the felt, on its way up, or up. */
+  let show: "table" | "rising" | "up" | "laying" = "table";
+  let hold: Hold | null = null;
+  const from = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
+  let travelled = 0;
+  let flourishing = false;
+  const spin = new THREE.Quaternion();
+  const UP = new THREE.Vector3(0, 1, 0);
+
+  function draw() {
+    for (const material of materials) material.opacity = strength;
+    mesh.scale.setScalar(GONE_SCALE + (1 - GONE_SCALE) * strength);
+    // A fading mesh still throws a solid shadow, so the shadow is dropped once
+    // the die is faint enough for its going to read as the die going. sync()
+    // has the last word on this every frame; see there.
+    mesh.castShadow = strength > 0.5;
+    mesh.visible = strength > 0;
+  }
 
   return {
     mesh,
+
+    appear() {
+      going = false;
+      strength = 1;
+      show = "table";
+      hold = null;
+      draw();
+    },
+
+    dismiss(now = false) {
+      if (now) {
+        going = false;
+        strength = 0;
+        draw();
+        return;
+      }
+      if (strength > 0) going = true;
+    },
+
+    advance(dt) {
+      if (show === "rising" || show === "laying") {
+        travelled = Math.min(1, travelled + dt / (show === "rising" ? RISE_SECONDS : LAY_SECONDS));
+        if (travelled >= 1) show = show === "rising" ? "up" : "table";
+      }
+      if (!going || strength === 0) return;
+      strength = Math.max(0, strength - dt / FADE_SECONDS);
+      if (strength === 0) going = false;
+      draw();
+    },
+
+    present(next, flourish) {
+      hold = next;
+      from.position.copy(mesh.position);
+      from.quaternion.copy(mesh.quaternion);
+      travelled = flourish ? 0 : 1;
+      flourishing = flourish;
+      show = flourish ? "rising" : "up";
+    },
+
+    lay() {
+      if (show === "table" || show === "laying") return;
+      from.position.copy(mesh.position);
+      from.quaternion.copy(mesh.quaternion);
+      travelled = 0;
+      flourishing = false;
+      show = "laying";
+    },
+
+    release() {
+      show = "table";
+      hold = null;
+    },
+
+    get arrived() {
+      return show === "up";
+    },
+
+    get held() {
+      return show !== "table";
+    },
+
+    get leaving() {
+      return going;
+    },
+
     sync(body, facing, easing) {
-      mesh.position.set(body.position.x, body.position.y, body.position.z);
+      // A die held up at the camera casts its shadow from halfway across the
+      // room, over the whole felt. It is not on the table; it should not be
+      // lighting it either.
+      mesh.castShadow = strength > 0.5 && show === "table";
+
+      if (show === "up" && hold) {
+        mesh.position.copy(hold.position);
+        mesh.quaternion.copy(hold.quaternion);
+        return;
+      }
+
+      // Where the body says the die is, which is where it landed and where it
+      // goes back to.
+      resting.set(body.position.x, body.position.y, body.position.z);
       target.set(
         body.quaternion.x,
         body.quaternion.y,
@@ -195,6 +358,26 @@ function build(
       );
       held.set(facing.x, facing.y, facing.z, facing.w);
       target.multiply(held);
+
+      if (show === "rising" && hold) {
+        const k = easeOut(travelled);
+        mesh.position.lerpVectors(from.position, hold.position, k);
+        mesh.quaternion.copy(from.quaternion).slerp(hold.quaternion, k);
+        if (flourishing) {
+          spin.setFromAxisAngle(UP, (1 - k) * FLOURISH_TURNS * Math.PI * 2);
+          mesh.quaternion.premultiply(spin);
+        }
+        return;
+      }
+
+      if (show === "laying") {
+        const k = easeOut(travelled);
+        mesh.position.lerpVectors(from.position, resting, k);
+        mesh.quaternion.copy(from.quaternion).slerp(target, k);
+        return;
+      }
+
+      mesh.position.copy(resting);
       if (easing) mesh.quaternion.slerp(target, 0.18);
       else mesh.quaternion.copy(target);
     },

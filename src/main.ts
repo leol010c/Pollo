@@ -3,25 +3,38 @@
  * this is the only place that knows about all three.
  *
  * It also holds the one rule the page runs on: the position die opens a round
- * and the location die finishes it. Whatever you press — the table, a button,
- * the space bar — does whichever of those two comes next.
+ * and the location die finishes it — if the location die is in play at all,
+ * which is what the switch under the wordmark decides. Whatever you press — the
+ * table, a button, the space bar — does whichever of those comes next.
+ *
+ * And the other rule, which is why the throw looks the way it does: only one
+ * die is ever on the felt. The die you have just read leaves at the instant the
+ * next one is released, so every throw lands on an empty table rather than on
+ * its neighbour.
+ *
+ * A die that has answered does not stay lying there to be squinted at, either.
+ * It rises off the felt and holds its landed face square-on, in exactly the
+ * place the placard is about to print that face — and the placard then opens
+ * out of it. The plate is measured first and the die flies to what it says, so
+ * the two are the same thing on the screen and not two things that agree.
  */
 
 import { createStage } from "./scene";
-import { createLocationDie, createPositionDie } from "./die";
-import { Dice, type Roller } from "./roll";
+import { holdFor } from "./present";
+import { createLocationDie, createPositionDie, type Die } from "./die";
+import { Dice } from "./roll";
 import { createChrome } from "./ui";
 import { createMenu } from "./menu";
+import { loadWhereDie, saveWhereDie } from "./settings";
 import { rig } from "./cheat";
 import { frame } from "./framing";
 import { multiply, readFace } from "./faces";
-import { DIE_HALF } from "./physics";
 
 /** A press this short and this still is a tap; anything more is a flick. */
 const TAP_MILLIS = 400;
 const TAP_PIXELS = 12;
 
-/** A beat between the dice stopping and the placard, so the stop registers. */
+/** A beat between the dice stopping and the die rising, so the stop registers. */
 const REVEAL_DELAY = 220;
 
 /**
@@ -35,14 +48,20 @@ const REVEAL_DELAY = 220;
  */
 const COAST = 1500;
 
-/** Where the two dice are left sitting when the page opens. */
-const KERB = 0.95;
+/**
+ * Where the die waiting to be thrown is left sitting when the page opens: dead
+ * centre across the felt, and this far down it as a fraction of its half-depth.
+ */
+const KERB = 0.28;
 
 async function start() {
   const canvas = document.getElementById("table") as HTMLCanvasElement;
   const stage = createStage(canvas);
   const chrome = createChrome();
-  const menu = createMenu();
+
+  /** Whether the location die is in play. The one thing the page remembers. */
+  let two = loadWhereDie();
+  const menu = createMenu(() => two);
 
   const dice = new Dice(frame(window.innerWidth, window.innerHeight).play);
   const what = { roller: dice.add(), die: await createPositionDie(stage.renderer) };
@@ -53,9 +72,24 @@ async function start() {
   /** Everything still worth drawing has to be drawn before this. */
   let drawUntil = performance.now() + COAST;
 
+  /** Which die is being held up at the camera, and whether the plate is open. */
+  let holding: "what" | "where" | null = null;
+  let revealed = true;
+
+  /**
+   * A big move like the rise is exactly what somebody who has turned motion
+   * down does not want. They still get the result — the die arrives rather than
+   * flying, and the card opens with it.
+   */
+  const still = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+
   function resize() {
     const play = stage.resize(window.innerWidth, window.innerHeight);
     dice.setPlay(play);
+    // The plate is laid out to the new screen, so a die holding a face up
+    // against it has to be told where that face has gone.
+    if (holding) raise(holding, false);
     drawUntil = performance.now() + COAST;
     return play;
   }
@@ -69,9 +103,15 @@ async function start() {
   });
 
   const play = resize();
-  what.roller.rest({ x: -KERB, z: play.halfZ * 0.28 });
-  where.roller.rest({ x: KERB, z: play.halfZ * 0.28 });
+  // The felt opens with the die that is about to be thrown on it, alone. The
+  // other one is off the table and unseen until it is its turn.
+  what.roller.rest({ x: 0, z: play.halfZ * KERB });
+  where.roller.rest({ x: 0, z: play.halfZ * KERB });
+  where.roller.lift();
+  where.die.dismiss(true);
   for (const { roller, die } of pair) die.sync(roller.body, roller.facing, false);
+
+  chrome.setPair(two);
 
   /** What is currently printed on the placard. */
   let round: { position: number | null; location: number | null } = {
@@ -82,19 +122,56 @@ async function start() {
   let inFlight: "what" | "where" | null = null;
   let postAt = 0;
 
-  /** Somewhere on the felt that is not under the die being thrown. */
-  const clearOf = (roller: Roller) => ({
-    x: roller.body.position.x,
-    z: roller.body.position.z,
-  });
+  /**
+   * Sends a settled die up to hold its face where the card is about to be.
+   *
+   * Also how a die already up there is re-aimed — at a plate that has changed
+   * shape under it, or a window that has. Without the flourish, since it is
+   * already holding and a second pirouette would be a die showing off.
+   */
+  function raise(which: "what" | "where", flourish = true) {
+    const slot = chrome.prepare({
+      position: round.position!,
+      location: round.location,
+      wants: two,
+    });
+    const entry = which === "what" ? what : where;
+    const landed = entry.roller.result;
+
+    if (!slot || !landed) {
+      chrome.setUp(false);
+      chrome.reveal();
+      return;
+    }
+
+    entry.die.present(
+      holdFor(stage.camera, slot, landed.index, {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      }),
+      flourish && !still.matches,
+    );
+    holding = which;
+    revealed = false;
+    chrome.setUp(true);
+  }
+
+  /** Puts the held die back where it landed, and takes the plate away with it. */
+  function layDown() {
+    if (!holding) return;
+    (holding === "what" ? what : where).die.lay();
+    holding = null;
+    chrome.setUp(false);
+    chrome.close();
+  }
 
   function begin(
     which: "what" | "where",
     aim?: { x: number; z: number },
     drag?: { x: number; z: number },
   ) {
-    const thrown = which === "what" ? what.roller : where.roller;
-    const other = which === "what" ? where.roller : what.roller;
+    const thrown = which === "what" ? what : where;
+    const other = which === "what" ? where : what;
 
     chrome.close();
     chrome.setRolling(true);
@@ -102,12 +179,22 @@ async function start() {
     postAt = 0;
     if (which === "what") round = { position: null, location: null };
 
-    if (drag) thrown.flickDie(drag, clearOf(other));
-    else thrown.throwDie(aim, clearOf(other));
+    // The table is cleared as the throw is made rather than before it. The body
+    // leaves the world on this tick, so the die coming down cannot touch it or
+    // be deflected by it, and the half-second it spends in the air is spent
+    // over an empty felt while the picture of the old one fades.
+    other.roller.lift();
+    other.die.dismiss();
+    thrown.die.appear();
+    holding = null;
+    chrome.setUp(false);
+
+    if (drag) thrown.roller.flickDie(drag);
+    else thrown.roller.throwDie(aim);
 
     // Nothing has been drawn yet, and this is the only moment at which the die
     // can be turned without anybody seeing it turn.
-    rig(dice, thrown, menu.allowed(which));
+    rig(dice, thrown.roller, menu.allowed(which));
   }
 
   /**
@@ -117,12 +204,45 @@ async function start() {
    * obvious next thing is the place. Anything else starts again.
    */
   function next(aim?: { x: number; z: number }, drag?: { x: number; z: number }) {
-    const halfway = round.position !== null && round.location === null;
+    const halfway = two && round.position !== null && round.location === null;
     begin(halfway ? "where" : "what", aim, drag);
   }
 
   chrome.onThrow(() => begin("what"));
   chrome.onWhere(() => begin("where"));
+
+  /**
+   * One die or two.
+   *
+   * Turning the location die off mid-round finishes that round where it stands:
+   * the placard drops the half it was still asking for, and the die itself
+   * leaves the table if it was sitting on it. A die actually in the air is left
+   * alone to land — the switch is not reachable while anything is rolling, but
+   * a keyboard can always find it.
+   */
+  function pairing(on: boolean) {
+    if (on === two) return;
+    two = on;
+    saveWhereDie(on);
+    chrome.setPair(on);
+
+    if (!on && inFlight !== "where") {
+      if (holding === "where") {
+        holding = null;
+        chrome.setUp(false);
+      }
+      where.roller.lift();
+      where.die.dismiss();
+    }
+    if (inFlight === null && round.position !== null) {
+      if (holding) raise(holding, false);
+      else chrome.post({ position: round.position, location: round.location, wants: two });
+    }
+    drawUntil = performance.now() + COAST;
+  }
+
+  chrome.onPair(pairing);
+  chrome.onLay(layDown);
 
   document.addEventListener("keydown", (event) => {
     if (event.key !== " " && event.key !== "Enter") return;
@@ -176,11 +296,12 @@ async function start() {
     }
     if (now < postAt) return;
 
-    if (inFlight === "what") round.position = what.roller.result?.value ?? null;
+    const which = inFlight;
+    if (which === "what") round.position = what.roller.result?.value ?? null;
     else round.location = where.roller.result?.value ?? null;
 
     inFlight = null;
-    if (round.position !== null) chrome.post({ position: round.position, location: round.location });
+    if (round.position !== null) raise(which);
   }
 
   let last = performance.now();
@@ -190,10 +311,22 @@ async function start() {
     last = now;
 
     dice.step(dt);
-    for (const { roller, die } of pair) die.sync(roller.body, roller.facing, roller.correcting);
+    let moving = false;
+    for (const { roller, die } of pair) {
+      die.advance(dt);
+      die.sync(roller.body, roller.facing, roller.correcting);
+      moving ||= die.leaving || (die.held && !die.arrived);
+    }
     post(now);
 
-    if (dice.rolling || inFlight !== null) drawUntil = now + COAST;
+    // The plate waits for the die: the card opens out of a face that is already
+    // sitting where the card is going to be.
+    if (holding && !revealed && (holding === "what" ? what : where).die.arrived) {
+      revealed = true;
+      chrome.reveal();
+    }
+
+    if (dice.rolling || inFlight !== null || moving) drawUntil = now + COAST;
     if (now <= drawUntil) stage.render();
 
     requestAnimationFrame(tick);
@@ -210,21 +343,26 @@ async function start() {
         next: () => next(),
         throwWhat: () => begin("what"),
         throwWhere: () => begin("where"),
+        pair: (on: boolean) => pairing(on),
+        paired: () => two,
+        // Which dice are on the felt, and how much of each one is still drawn.
+        onTable: () => ({ what: what.roller.onTable, where: where.roller.onTable }),
+        shown: () => ({ what: seen(what.die), where: seen(where.die) }),
         rolling: () => dice.rolling || inFlight !== null,
         round: () => ({ ...round }),
         upFaces: () => ({
           what: readFace(multiply(what.roller.body.quaternion, what.roller.facing)).value,
           where: readFace(multiply(where.roller.body.quaternion, where.roller.facing)).value,
         }),
-        gap: () =>
-          Math.hypot(
-            what.roller.body.position.x - where.roller.body.position.x,
-            what.roller.body.position.z - where.roller.body.position.z,
-          ) -
-          DIE_HALF * 2,
       },
     });
   }
+}
+
+/** How much of a die is still being drawn. Dev handle only. */
+function seen(die: Die) {
+  const [face] = die.mesh.material as { opacity: number }[];
+  return { visible: die.mesh.visible, opacity: face?.opacity, leaving: die.leaving };
 }
 
 start().catch((error) => {

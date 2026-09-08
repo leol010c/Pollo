@@ -87,10 +87,15 @@ function row(
   return section;
 }
 
-export function createMenu(): Menu {
+/**
+ * `pairing` answers whether the location die is in play at all. When it is off
+ * there is nothing to load it with, so that half of the sheet is not offered.
+ */
+export function createMenu(pairing: () => boolean): Menu {
   const picked: Record<Which, Set<number>> = { what: new Set(), where: new Set() };
 
   let panel: HTMLElement | null = null;
+  let whereRow: HTMLElement | null = null;
   let open = false;
 
   function build(): HTMLElement {
@@ -115,10 +120,12 @@ export function createMenu(): Menu {
     done.textContent = "Done";
     done.addEventListener("click", close);
 
+    whereRow = row("Where", LOCATIONS, picked.where);
+
     sheet.append(
       label,
       row("What", POSITIONS, picked.what),
-      row("Where", LOCATIONS, picked.where),
+      whereRow,
       note,
       done,
     );
@@ -136,6 +143,7 @@ export function createMenu(): Menu {
 
   function show() {
     panel ??= build();
+    if (whereRow) whereRow.hidden = !pairing();
     // A frame between the panel arriving and being told to open, or the
     // transition has nothing to run from.
     requestAnimationFrame(() => {
@@ -149,7 +157,9 @@ export function createMenu(): Menu {
     open = false;
   }
 
-  const mark = document.querySelector(".mark");
+  // The word itself, not the block around it: the switch under it is a control
+  // in its own right, and pressing it must not count toward the three taps.
+  const mark = document.querySelector(".mark__word");
   if (mark) {
     let taps: number[] = [];
     let held: ReturnType<typeof setTimeout> | undefined;

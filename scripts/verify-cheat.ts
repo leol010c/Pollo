@@ -82,9 +82,10 @@ function run(play: Play, rounds: number) {
     const before = thrown.facing;
 
     // Both gestures the page has: half the throws are taps, half are flicks.
-    const clear = { x: other.body.position.x, z: other.body.position.z };
-    if (round % 2 === 0) thrown.throwDie(undefined, clear);
-    else thrown.flickDie({ x: (Math.random() - 0.5) * 6, z: -Math.random() * 6 }, clear);
+    // As the page throws: the other die is lifted off the felt as this one goes.
+    other.lift();
+    if (round % 2 === 0) thrown.throwDie();
+    else thrown.flickDie({ x: (Math.random() - 0.5) * 6, z: -Math.random() * 6 });
     rig(dice, thrown, allowed);
     if (thrown.facing !== before) tally.turned++;
 
@@ -139,7 +140,8 @@ function replays(play: Play, rounds: number): string[] {
     die.rest({ x: -0.95, z: play.halfZ * 0.28 });
     other.rest({ x: 0.95, z: play.halfZ * 0.28 });
 
-    die.throwDie(undefined, { x: other.body.position.x, z: other.body.position.z });
+    other.lift();
+    die.throwDie();
 
     const track: number[][] = [];
     for (let steps = 0; dice.rolling && steps < maxSteps; steps++) {

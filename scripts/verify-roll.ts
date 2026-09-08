@@ -4,14 +4,14 @@
  * The page makes one promise — throw a die and it lands on a side — and that is
  * a claim about the physics, not about the rendering. This runs the real Dice
  * on the real felt, in the real order (a position, then a place, then a
- * position again, with the other die sitting where it last stopped), and fails
- * on any of the four ways the promise breaks: a throw that never stops, a die
- * that leaves the table, a die that has to be laid flat too often, and a die
- * that favours a face.
+ * position again, each onto a table the other die has just been lifted off),
+ * and fails on any of the four ways the promise breaks: a throw that never
+ * stops, a die that leaves the table, a die that has to be laid flat too often,
+ * and a die that favours a face.
  *
- * The second die is the reason the order matters. A throw onto an empty felt
- * and a throw onto a felt with something already on it are not the same throw,
- * and only one of them is the one anybody makes.
+ * The order still matters, because the dice are still thrown one at a time and
+ * the felt is a different size in each hand's orientation — but the throw is
+ * always onto an empty table now, which is what the page does.
  *
  * Run with: pnpm verify
  */
@@ -74,7 +74,6 @@ function run(play: Play, rounds: number) {
 
   const tallies: Record<string, Tally> = { what: blank(), where: blank() };
   const escapes: string[] = [];
-  let closest = Infinity;
 
   // A little past the rail, since a die resting against it is legitimately
   // half its width beyond the plane.
@@ -84,10 +83,10 @@ function run(play: Play, rounds: number) {
 
   const throwOne = (name: string, thrown: Roller, other: Roller, round: number) => {
     const tally = tallies[name]!;
-    thrown.throwDie(undefined, {
-      x: other.body.position.x,
-      z: other.body.position.z,
-    });
+    // The page clears the table as the throw is made: the die that was lying
+    // there comes off the felt at the instant the next one is released.
+    other.lift();
+    thrown.throwDie();
 
     for (let steps = 0; dice.rolling && steps < maxSteps; steps++) {
       dice.step(PHYSICS_STEP);
@@ -111,18 +110,6 @@ function run(play: Play, rounds: number) {
     if (result.corrected) tally.corrected++;
     tally.totalSeconds += result.seconds;
     tally.slowest = Math.max(tally.slowest, result.seconds);
-
-    // Two dice inside one another would mean a correction pushed one through
-    // the other. Measured in three dimensions on purpose: a die that came to
-    // rest on top of its neighbour is directly above it and perfectly legal.
-    closest = Math.min(
-      closest,
-      Math.hypot(
-        what.body.position.x - where.body.position.x,
-        what.body.position.y - where.body.position.y,
-        what.body.position.z - where.body.position.z,
-      ),
-    );
   };
 
   for (let round = 0; round < rounds; round++) {
@@ -130,7 +117,7 @@ function run(play: Play, rounds: number) {
     throwOne("where", where, what, round);
   }
 
-  return { tallies, escapes, closest };
+  return { tallies, escapes };
 }
 
 function chiSquare(faces: number[], landed: number): number {
@@ -158,7 +145,7 @@ for (const { name, width, height } of VIEWPORTS) {
   );
 
   const started = Date.now();
-  const { tallies, escapes, closest } = run(play, ROUNDS_PER_TABLE);
+  const { tallies, escapes } = run(play, ROUNDS_PER_TABLE);
 
   for (const [die, tally] of Object.entries(tallies)) {
     const spread = tally.faces
@@ -185,18 +172,12 @@ for (const { name, width, height } of VIEWPORTS) {
     if (chi > CHI_SQUARE_LIMIT) fail(`${die}: not a flat distribution, chi-square ${chi.toFixed(2)}`);
   }
 
-  console.log(
-    `  dice came within ${closest.toFixed(2)} units of each other` +
-      `   ${((Date.now() - started) / 1000).toFixed(1)}s wall`,
-  );
+  console.log(`  ${((Date.now() - started) / 1000).toFixed(1)}s wall`);
 
   if (escapes.length > 0) {
     fail(`${escapes.length} throws left the table`);
     for (const escape of escapes.slice(0, 3)) console.error(`        ${escape}`);
   }
-  // Two axis-aligned one-unit cubes resting on or beside each other have their
-  // centres one unit apart; tilted ones can legitimately be a little closer.
-  if (closest < DIE_HALF * 2 * 0.82) fail(`dice overlapped: centres ${closest.toFixed(2)} apart`);
 }
 
 console.log("");

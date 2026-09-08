@@ -36,6 +36,25 @@ export const FACE_NORMALS: readonly Vec3Like[] = [
 ];
 
 /**
+ * Which way up each face is printed, in the same order.
+ *
+ * A face's normal says where the face points; this says which way round what is
+ * printed on it was laid down — the direction, in the die's own axes, that is
+ * the top of the picture. The four sides are printed with the die's own up; the
+ * top and bottom are printed the way three.js wraps a box, away from and toward
+ * the camera respectively. It is what lets a face be turned square-on to be read
+ * without the picture on it ending up on its side.
+ */
+export const FACE_UPS: readonly Vec3Like[] = [
+  { x: 0, y: 1, z: 0 },
+  { x: 0, y: 1, z: 0 },
+  { x: 0, y: 0, z: -1 },
+  { x: 0, y: 0, z: 1 },
+  { x: 0, y: 1, z: 0 },
+  { x: 0, y: 1, z: 0 },
+];
+
+/**
  * The value printed on each of those faces.
  *
  * Laid out the way a real die is: opposite faces sum to seven. It is not

@@ -43,17 +43,20 @@ export const DIE_ANGULAR_DAMPING = 0.05;
 export const FELT_CONTACT = { friction: 0.4, restitution: 0.3 };
 export const RIM_CONTACT = { friction: 0.15, restitution: 0.62 };
 
-/**
- * One die against the other: grippy and nearly dead, so a die that lands on top
- * of its neighbour stays there and topples off it, rather than skating away
- * like it hit ice.
- */
-export const DIE_CONTACT = { friction: 0.55, restitution: 0.16 };
-
 export interface Table {
   world: CANNON.World;
   /** Puts another die on the felt and hands back its body. */
   addDie(): CANNON.Body;
+  /**
+   * Takes a die off the table altogether.
+   *
+   * Only one die is ever in play, so the other one is not sitting frozen in a
+   * corner being bounced off — it is not on the felt at all. A body the world
+   * does not hold cannot be collided with, stepped, or drawn by mistake.
+   */
+  lift(die: CANNON.Body): void;
+  /** Puts a lifted die back. Harmless on one that never left. */
+  place(die: CANNON.Body): void;
   /** Moves the four rails to a new play area, on resize. */
   setPlay(play: Play): void;
 }
@@ -73,12 +76,11 @@ function rail(material: CANNON.Material, normal: CANNON.Vec3): CANNON.Body {
  * Stops a settled die dead, so nothing that happens later can change what it
  * says.
  *
- * There are two dice on this table and they are thrown one at a time, so the
- * second regularly arrives where the first is sitting. Left dynamic, a die
- * could be knocked onto a new face while its old face was still printed on the
- * placard, and the page would be posting a result the table no longer agreed
- * with. Frozen, it is something the other die bounces off — which is also how
- * a die you have already read and set aside behaves.
+ * A die that has been read sits there until the next throw takes it off the
+ * table, and in between it must not creep, sag into the felt, or be woken by
+ * anything: what is printed on the placard is what the table is showing. It is
+ * also the state thaw() undoes, which is what makes the same throw twice the
+ * same throw.
  */
 export function freeze(die: CANNON.Body): void {
   die.velocity.setZero();
@@ -140,9 +142,7 @@ export function createTable(play: Play): Table {
   world.addContactMaterial(
     new CANNON.ContactMaterial(dieMaterial, rimMaterial, RIM_CONTACT),
   );
-  world.addContactMaterial(
-    new CANNON.ContactMaterial(dieMaterial, dieMaterial, DIE_CONTACT),
-  );
+  // No die against die: only one of them is ever on the table.
 
   const felt = new CANNON.Body({
     type: CANNON.Body.STATIC,
@@ -172,6 +172,12 @@ export function createTable(play: Play): Table {
   return {
     world,
     setPlay,
+    lift(die) {
+      world.removeBody(die);
+    },
+    place(die) {
+      if (!world.bodies.includes(die)) world.addBody(die);
+    },
     addDie() {
       const die = new CANNON.Body({
         mass: DIE_MASS,

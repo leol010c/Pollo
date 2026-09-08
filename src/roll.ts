@@ -41,10 +41,11 @@ export interface RollResult extends FaceReading {
  * How many times a die that stopped cocked is knocked loose before the roll is
  * decided for it.
  *
- * Two was enough while there was one die on the table. With two, a throw
- * regularly ends up perched on its neighbour, and the first knock often just
- * puts it back on top — the third try is what took the tidy-ups from one throw
- * in sixty to one in a few hundred.
+ * Two was enough for a die that only ever leans on a rail, which — now that the
+ * felt is cleared before every throw — is the only thing left for it to lean
+ * on. The third try is kept because it costs nothing on a throw that did not
+ * need it, and it is the difference between one tidy-up in a few hundred and
+ * one in a few thousand.
  */
 const MAX_NUDGES = 3;
 
@@ -89,9 +90,19 @@ export class Roller {
    */
   facing: Quat = IDENTITY;
 
+  /**
+   * True while this die is on the felt.
+   *
+   * The dice are thrown one at a time and only the one in play is ever on the
+   * table, so between throws the other is lifted off it entirely rather than
+   * left lying in the way of the next throw.
+   */
+  onTable = true;
+
   constructor(
     readonly body: CANNON.Body,
     private play: Play,
+    private table: Table,
   ) {}
 
   setPlay(play: Play) {
@@ -102,6 +113,20 @@ export class Roller {
     return this.phase;
   }
 
+  /** Takes the die off the table. It keeps its pose, so it can be put back. */
+  lift() {
+    if (!this.onTable) return;
+    this.table.lift(this.body);
+    this.onTable = false;
+  }
+
+  /** Puts a lifted die back on the felt. Harmless on one that never left. */
+  place() {
+    if (this.onTable) return;
+    this.table.place(this.body);
+    this.onTable = true;
+  }
+
   /**
    * Lays the die flat where it is told, showing a face nobody chose.
    *
@@ -110,6 +135,7 @@ export class Roller {
    * than left there.
    */
   rest(at: { x: number; z: number }) {
+    this.place();
     const flat = upright(randomOrientation());
     this.body.position.set(at.x, DIE_HALF, at.z);
     this.body.quaternion.set(flat.x, flat.y, flat.z, flat.w);
@@ -137,13 +163,12 @@ export class Roller {
     position.z = Math.min(limitZ, Math.max(-limitZ, position.z));
   }
 
-  /** Where the other die is, so a throw does not start on top of it. */
-  throwDie(aim?: { x: number; z: number }, clear?: { x: number; z: number }) {
-    this.begin(wind(launch(this.play, aim, clear)));
+  throwDie(aim?: { x: number; z: number }) {
+    this.begin(wind(launch(this.play, aim)));
   }
 
-  flickDie(drag: { x: number; z: number }, clear?: { x: number; z: number }) {
-    this.begin(wind(flick(this.play, drag, clear)));
+  flickDie(drag: { x: number; z: number }) {
+    this.begin(wind(flick(this.play, drag)));
   }
 
   /**
@@ -160,6 +185,9 @@ export class Roller {
     const { from, orientation, seed } = wound;
     this.wound = wound;
     this.random = stream(seed);
+
+    // A die is always thrown back onto the table, whether or not it was on it.
+    this.place();
 
     const die = this.body;
     thaw(die);
@@ -274,7 +302,7 @@ export class Dice {
   }
 
   add(): Roller {
-    const roller = new Roller(this.table.addDie(), this.play);
+    const roller = new Roller(this.table.addDie(), this.play, this.table);
     this.rollers.push(roller);
     return roller;
   }

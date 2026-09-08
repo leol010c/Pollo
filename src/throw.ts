@@ -52,16 +52,6 @@ const ROLL_TRANSFER = 1.6;
 /** Random share mixed into each axis, so no two throws tumble identically. */
 const WOBBLE = 0.45;
 
-/**
- * How far a throw starts from the die already on the table.
- *
- * The dice are thrown one at a time, so the second one is regularly released
- * over the first. Landing on it is fine and often good to watch — it is the
- * *release point* that wants clearing, because a die dropped straight down onto
- * another one mostly just teeters on it.
- */
-const LAUNCH_CLEARANCE = 1.8;
-
 const clamp = (v: number, lo: number, hi: number) =>
   Math.min(hi, Math.max(lo, v));
 
@@ -112,26 +102,12 @@ function idleAim(play: Play): { x: number; z: number } {
  * Speed is set from the distance the die has to cover rather than fixed, so it
  * arrives on a tall phone and does not fire off a wide desktop — the play area
  * changes depth by a factor of two across viewports.
+ *
+ * Nothing is ever in the way. The die that was lying there is lifted off the
+ * table on the tick this one is released, so a throw is aimed at an empty felt
+ * and the release point needs no clearing.
  */
-/** Slides a release point sideways until it is not over the other die. */
-function stepAside(x: number, z: number, play: Play, clear?: { x: number; z: number }): number {
-  if (!clear) return x;
-  if (Math.hypot(x - clear.x, z - clear.z) >= LAUNCH_CLEARANCE) return x;
-
-  const limit = play.halfX - DIE_HALF * 2;
-  const away = x >= clear.x ? 1 : -1;
-  const aside = clamp(clear.x + away * LAUNCH_CLEARANCE, -limit, limit);
-  // If sliding that way ran into a rail, there is always room on the other side.
-  return Math.abs(aside - clear.x) >= LAUNCH_CLEARANCE
-    ? aside
-    : clamp(clear.x - away * LAUNCH_CLEARANCE, -limit, limit);
-}
-
-export function launch(
-  play: Play,
-  aim?: { x: number; z: number },
-  clear?: { x: number; z: number },
-): Launch {
+export function launch(play: Play, aim?: { x: number; z: number }): Launch {
   const target = aim ?? idleAim(play);
 
   const z = play.halfZ - DIE_HALF * 2;
@@ -141,11 +117,7 @@ export function launch(
     play.halfX - DIE_HALF * 2,
   );
 
-  const position: Vec = {
-    x: stepAside(spawnX, z, play, clear),
-    y: RELEASE_HEIGHT,
-    z,
-  };
+  const position: Vec = { x: spawnX, y: RELEASE_HEIGHT, z };
 
   const dx = target.x - position.x;
   const dz = target.z - position.z;
@@ -170,18 +142,14 @@ export function launch(
  * hard. Direction comes from the drag, distance from how far it travelled,
  * both clamped so a violent swipe is still a throw and not an escape attempt.
  */
-export function flick(
-  play: Play,
-  drag: { x: number; z: number },
-  clear?: { x: number; z: number },
-): Launch {
+export function flick(play: Play, drag: { x: number; z: number }): Launch {
   const distance = Math.hypot(drag.x, drag.z);
-  if (distance < 1e-3) return launch(play, undefined, clear);
+  if (distance < 1e-3) return launch(play);
 
   const reach = clamp(distance * 1.6, 2, play.halfZ * 2);
   const aim = {
     x: clamp((drag.x / distance) * reach, -play.halfX * 0.8, play.halfX * 0.8),
     z: clamp((drag.z / distance) * reach - play.halfZ * 0.5, -play.halfZ * 0.85, play.halfZ * 0.5),
   };
-  return launch(play, aim, clear);
+  return launch(play, aim);
 }

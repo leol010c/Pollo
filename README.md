@@ -3,6 +3,17 @@
 Two dice on a lit table. One says what, one says where. Tap, watch them tumble,
 and read what they landed on. That is the whole product.
 
+They are thrown one at a time and only one of them is ever on the felt: the die
+you have just read leaves at the instant the next one is released, so every
+throw lands on an empty table. The page opens with the position die alone, which
+is the question most people came for; the switch under the wordmark brings the
+place in, and is the one thing about a session that is remembered.
+
+A die that has answered comes up to be read. It rises off the cloth, turns the
+landed face square-on, and holds it exactly where the placard is about to print
+that face — and the placard then opens out of it. Put it back down and it goes
+and lies where it landed.
+
 The physics is real — rigid bodies, a felt with friction and bounce, four rails
 they can never get past, and each other to bounce off — so the result is decided
 by the throw rather than by `Math.random()` dressed up in an animation. Every
@@ -45,8 +56,10 @@ src/cheat.ts     loading the dice without touching the throw
 ```
 src/scene.ts       renderer, lights, felt, rails, the camera
 src/die.ts         the rounded cube, printed with pictures or with words
+src/present.ts     where a die goes to be read, solved from the screen
 src/positions.ts   what each face of the light die is called
 src/locations.ts   what each face of the dark die is called
+src/settings.ts    the one preference the page keeps
 src/ui.ts          the placard, and the chrome around the canvas
 src/menu.ts        the menu nobody is meant to find
 src/main.ts        the loop, and the only file that knows about both halves
@@ -63,7 +76,7 @@ The split is not tidiness. `scripts/verify-roll.ts` imports the first half and
 throws the dice thousands of times with no screen attached, which only proves
 something about the page because it is running the page's own code.
 
-### Three rules that hold it together
+### Four rules that hold it together
 
 **The order of the faces is one fact, written once.** `FACE_VALUES` in
 `faces.ts` is in three.js's box-group order — `+X, -X, +Y, -Y, +Z, -Z` — and it
@@ -71,18 +84,48 @@ is the array `die.ts` builds its materials from *and* the array the face reading
 searches. There is no second table mapping a value to a picture, so the physics
 and the artwork cannot drift apart. Both dice use it.
 
-**A die that has been read is frozen.** The two dice are thrown one at a time,
-so the second regularly lands where the first is sitting. Left dynamic, it could
-knock the first onto a new face while its old face was still printed on the
-placard. `freeze()` in `physics.ts` makes a settled die immovable — something
-the other one bounces off, which is also how a die you have read and set aside
-behaves.
+**Only one die is ever on the table.** The dice are thrown one at a time, and
+the one already lying there is taken out of the world on the tick the next one
+is released — `lift()` in `physics.ts`, on the same line as the throw. Nothing
+is in the way, nothing is bounced off, and a throw is aimed at an empty felt.
+What you see is the picture catching up: the die that has gone fades out over a
+quarter of a second, which is a good deal less than the half-second the new one
+spends in the air, so there is nothing to wait for. A die that has been read is
+frozen while it sits there, so what is printed on the placard is what the table
+is showing until the moment it leaves — and while it is up at the camera being
+read, the body has never moved off the spot it landed on, which is where "lay it
+down" puts the picture of it back.
+
+**The card opens out of the face, not over it.** The placard is laid out first
+and asked where its card is going to be; the die is then sent to that patch of
+screen, and the card grows out of the face it finds sitting there. Both sides
+work from the one measurement — `prepare()` in `ui.ts` hands `holdFor()` in
+`present.ts` a rectangle, and the fraction of that rectangle the die covers is
+set in one place and passed to the stylesheet as a custom property. Nothing is
+tuned to a screen size, so a phone turned sideways, a card that has stepped down
+to make room for a second one, and a window dragged wider all take the die with
+them.
 
 **The dice always answer.** If one stops leaning on a rail or perched on its
 neighbour, it is knocked loose and allowed to fall again, three times. If it
 still will not lie flat it is laid flat on the face it was nearest to showing,
 and the scene eases it there rather than cutting. A page whose one job is
 deciding something must never reply "it is on its edge".
+
+### The reveal
+
+The rise is `present()` in `die.ts` and it touches no physics at all. There is
+nothing else on the felt for a raised die to still be part of, so the body stays
+frozen where it landed and this is a picture of it leaving — which is why it can
+be a plain interpolation rather than a kinematic body fighting gravity. It takes
+just over half a second, on a curve that leaves quickly and arrives gently, with
+one extra revolution wound in at the start and unwound across the way up. A turn
+of 2π is the identity, so both ends of the move are exactly where they would
+have been without it; all it does is make the arrival a small performance.
+
+`prefers-reduced-motion` skips the flight rather than slowing it. The die arrives
+and the card opens with it: a reveal that never happened would be worse than one
+that happened at once.
 
 ### Adding a position or a place
 
@@ -123,7 +166,10 @@ far from the middle of the table, was handed a different one every time. Fixing
 that made the honest dice better too — they settle sooner and land cocked a
 third as often as they used to.
 
-Nothing is written down. Close the page and it is a fair die again.
+Nothing is written down. Close the page and it is a fair die again. The one and
+only thing the page does remember is in `settings.ts`, and it is the switch
+under the wordmark: one die or two, off by default. That is a preference rather
+than a secret.
 
 ## Checking it
 
@@ -135,16 +181,13 @@ pnpm build
 ```
 
 `pnpm verify` runs the real `Dice` on the felt each real viewport produces, in
-the real order — a position, then a place, then a position again, with the other
-die sitting wherever it last stopped. A throw onto an empty felt and a throw
-onto a felt with something already on it are not the same throw, and only one of
-them is the one anybody makes.
+the real order — a position, then a place, then a position again, each onto a
+table the other die has just been lifted off, which is what the page does.
 
-It fails on any of five things: a throw that never stops, a die that leaves the
-table, a die that has to be laid flat too often, a die that favours a face
-(chi-square, p = 0.001), and two dice ending up inside one another. It takes
-under two seconds, so there is no reason not to run it after touching anything
-in the first half of the list above.
+It fails on any of four things: a throw that never stops, a die that leaves the
+table, a die that has to be laid flat too often, and a die that favours a face
+(chi-square, p = 0.001). It takes well under a second, so there is no reason not
+to run it after touching anything in the first half of the list above.
 
 `pnpm verify:cheat` runs the same throws with `rig()` in the middle of them, and
 fails on three things: a loaded throw that did not land on one of the faces it
@@ -153,7 +196,8 @@ printing may be rigged, the physics may not — and a throw thrown twice from th
 same wound state going anywhere different, compared step by step rather than
 just at the end. Three thousand loaded throws, no misses.
 
-The numbers they are currently holding: half of all throws settle inside two
-seconds and nine in ten inside two and a half, about one throw in two hundred
-has to be laid flat, and over twenty thousand throws of each die neither left
-the table, overlapped its neighbour, or favoured a face.
+The numbers they are currently holding: a throw settles in about two seconds,
+the slowest in four and a half, and fewer than one throw in five hundred has to
+be laid flat — a tenth of what it was when the second die was still lying on the
+felt to be landed on. Over twenty thousand throws, neither die left the table or
+favoured a face.
