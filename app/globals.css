@@ -1,0 +1,252 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ---------------------------------------------------------------------------
+   Design tokens — dark-first, "tactile premium".
+
+   The app is dark-only, so shadcn's light and dark scales are collapsed into a
+   single set of values on :root. The brand colour is `--brand`, deliberately
+   NOT shadcn's `--accent` — in shadcn's vocabulary `--accent` is the muted
+   hover surface, and overloading it turns every hover state brass.
+   --------------------------------------------------------------------------- */
+:root {
+  /* Palette — warm charcoal and blush.
+     Low, warm and restrained: the register this sits in is intimacy, not
+     nightlife, so the accent is a muted clay rather than a hot pink.
+
+     --bg tracks the active backdrop's clear colour in lib/scene/backdrops.ts.
+     Worth knowing that the clear colour is never actually rendered: the camera
+     looks down steeply enough that every pixel of the canvas is velvet. What
+     this colours is the three places the canvas doesn't cover — the browser
+     theme colour, the overscroll area, and the placeholder behind the scene
+     while it loads. It still has to match, or the app flashes a different
+     colour on load than it settles to.
+
+     The surfaces sit a little off the felt's hue on purpose. The chips float
+     over the velvet, and matching it exactly makes them read as holes in it. */
+  --bg: #150610;
+  --surface: #2a1220;
+  --surface-raised: #3a1b2d;
+  --hairline: rgba(255, 235, 245, 0.10);
+  --hairline-strong: rgba(255, 235, 245, 0.2);
+  --fg: #fbeff4;
+  --fg-muted: #d3b0c0;
+  --brand: #ec5f86;
+  --brand-dim: #b34765;
+  --on-brand: #1a0610;
+
+  /* Die materials deliberately do NOT live here. A die's surface is a colour
+     plus roughness and metalness, which CSS has no way to express, so the face
+     sets in lib/dice/faceSet.ts own them outright rather than half here and
+     half there. */
+
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+
+  --dur-fast: 150ms;
+  --dur-base: 220ms;
+  --dur-slow: 300ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* shadcn semantic tokens, mapped onto the palette above so any shadcn
+     component dropped in inherits the design system for free. */
+  --radius: 0.75rem;
+  --background: var(--bg);
+  --foreground: var(--fg);
+  --card: var(--surface);
+  --card-foreground: var(--fg);
+  --popover: var(--surface-raised);
+  --popover-foreground: var(--fg);
+  --primary: var(--brand);
+  --primary-foreground: var(--on-brand);
+  --secondary: var(--surface-raised);
+  --secondary-foreground: var(--fg);
+  --muted: var(--surface-raised);
+  --muted-foreground: var(--fg-muted);
+  --accent: var(--surface-raised);
+  --accent-foreground: var(--fg);
+  --destructive: #e8687a;
+  --destructive-foreground: var(--on-brand);
+  --border: var(--hairline);
+  --input: var(--hairline-strong);
+  --ring: var(--brand);
+}
+
+/* Kept in sync so `dark:` variants resolve to the same values rather than
+   snapping back to shadcn's defaults. */
+.dark {
+  --background: var(--bg);
+  --foreground: var(--fg);
+  --card: var(--surface);
+  --card-foreground: var(--fg);
+  --popover: var(--surface-raised);
+  --popover-foreground: var(--fg);
+  --primary: var(--brand);
+  --primary-foreground: var(--on-brand);
+  --secondary: var(--surface-raised);
+  --secondary-foreground: var(--fg);
+  --muted: var(--surface-raised);
+  --muted-foreground: var(--fg-muted);
+  --accent: var(--surface-raised);
+  --accent-foreground: var(--fg);
+  --destructive: #e8687a;
+  --border: var(--hairline);
+  --input: var(--hairline-strong);
+  --ring: var(--brand);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Brand colour under its own name, so `text-brand` never collides with
+     shadcn's hover-surface `accent`. */
+  --color-brand: var(--brand);
+  --color-brand-dim: var(--brand-dim);
+  --color-on-brand: var(--on-brand);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+  --radius-xl: var(--r-xl);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+
+  --font-sans: var(--font-inter);
+  /* Two typefaces, with a strict division of labour: Inter is what the
+     interface speaks in, this is what it names things in. It appears in exactly
+     two places — the position's name on the reveal, and the deck's title — and
+     nowhere on a control.
+
+     A serif was pulled out of here once for reading as decoration. The reason
+     was that it had been applied to a single label, so it looked like that one
+     label had been dressed up. Used for every name and no buttons it reads as a
+     rule instead. */
+  --font-display: var(--font-cormorant);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+    /* The tray fills the viewport; the page itself never scrolls. */
+    overscroll-behavior: none;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  /* Removes the ~300ms delay mobile browsers hold every tap for while they
+     wait to see whether it becomes a double-tap-to-zoom. Applied to controls
+     only — the page itself keeps pinch-zoom, which is an accessibility
+     requirement, and the canvas sets its own touch handling. */
+  button,
+  [role="button"],
+  a,
+  input,
+  label {
+    touch-action: manipulation;
+  }
+
+  /* One focus treatment everywhere — never a bare outline-none. */
+  :where(button, a, input, [tabindex]):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+/* Digits must not jitter as roll values tick over. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* Press feedback, for a product that is used on a phone.
+   `hover:` never fires on a touchscreen, so a control styled only for hover is
+   a control that gives no feedback at all on the device this is used on. One
+   treatment rather than a per-button invention, so every control answers a
+   finger the same way.
+
+   Scale and opacity only: both are composited and neither changes the element's
+   measured size, so pressing a button never nudges what sits beside it. */
+.press {
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out);
+}
+
+.press:active:not(:disabled) {
+  transform: scale(0.97);
+  opacity: 0.82;
+}
+
+/* Frosted control surfaces floating over the 3D tray. */
+.glass {
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  border: 1px solid var(--hairline);
+}
+
+/* .glass without the backdrop-filter, for controls that sit on a scrim rather
+   than directly on the tray.
+
+   `backdrop-filter` inside a subtree whose opacity is being animated is one of
+   the reliable ways to make a phone drop frames: the blurred backdrop has to be
+   re-rasterised on every frame of the fade. Both reveals fade their control bar
+   in, so five frosted plates were being recomputed sixty times a second at the
+   exact moment the app most needed the budget.
+
+   Nothing is lost. The scrim behind these is between 0.82 (cards) and 0.97
+   (the die) opaque — there was never anything left underneath to see through,
+   and the blur was sampling a wall. */
+.panel {
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid var(--hairline);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

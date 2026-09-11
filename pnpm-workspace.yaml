@@ -2,7 +2,19 @@
 # from this file, and this is the only setting the project needs.
 #
 # pnpm does not run a dependency's install scripts unless it is named here, and
-# esbuild wants one: its script places the platform binary that Vite's dev
-# server and build both shell out to.
+# these three want them for the same reason: each fetches or links a native
+# binary that does not exist until its script has run.
+#
+#   esbuild        — Next's bundler toolchain; the script places its platform binary
+#   sharp          — Next's image optimiser, a native module
+#   unrs-resolver  — the resolver behind eslint-config-next's import rules
+#
+# These were left as the literal string "set this to true or false" from the day
+# the file was generated, which pnpm reads as neither true nor false. It has
+# worked so far only because all three resolved a prebuilt binary anyway; that
+# is luck rather than configuration, and it fails on the first platform where
+# one of them has to build.
 allowBuilds:
   esbuild: true
+  sharp: true
+  unrs-resolver: true

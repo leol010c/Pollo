@@ -1,24 +1,13 @@
-# Pollo
+# Dice Throw
 
-Two dice on a lit table. One says what, one says where. Tap, watch them tumble,
-and read what they landed on. That is the whole product.
+A physics die and a deck of cards on a candlelit table, for two people deciding
+what to do next. Throw the die or turn a card; either way you get a position.
+There is a coin to gamble the result on, a higher-or-lower call that does the
+same job in card mode, and a disguise for when somebody walks in.
 
-They are thrown one at a time and only one of them is ever on the felt: the die
-you have just read leaves at the instant the next one is released, so every
-throw lands on an empty table. The page opens with the position die alone, which
-is the question most people came for; the switch under the wordmark brings the
-place in, and is the one thing about a session that is remembered.
-
-A die that has answered comes up to be read. It rises off the cloth, turns the
-landed face square-on, and holds it exactly where the placard is about to print
-that face — and the placard then opens out of it. Put it back down and it goes
-and lies where it landed.
-
-The physics is real — rigid bodies, a felt with friction and bounce, four rails
-they can never get past, and each other to bounce off — so the result is decided
-by the throw rather than by `Math.random()` dressed up in an animation. Every
-roll settles on a face; the one pointing at the ceiling is the one that gets
-posted.
+Built with Next.js 16, React Three Fiber and Rapier. **The phone is the
+product** — everything here is designed for a phone held upright in a dim room,
+and the desktop layout is the adaptation.
 
 ## Running it
 
@@ -27,177 +16,168 @@ pnpm install
 pnpm dev
 ```
 
-`vite --host` prints a Network URL as well as a local one. Open that on a phone:
-the page is built for one held upright in a dim room, and the desktop layout is
-the adaptation.
+`next dev` binds `0.0.0.0` and prints a Network URL. Open that on a phone —
+`next.config.ts` allows private-range dev origins so HMR and the dev overlay
+work there, which matters because that is the only place the app can really be
+judged.
 
-pnpm, not npm — `packageManager` pins the version and `pnpm-workspace.yaml`
-carries the one setting the project needs (esbuild is allowed to run its install
-script, which is how Vite gets its binary).
+pnpm, not npm: `packageManager` in `package.json` pins the version, and
+`pnpm-workspace.yaml` carries the one setting the project needs (which
+dependencies may run install scripts).
 
 ## How it is put together
 
-Two halves that do not know about each other.
+The store is the whole of the app's state and the scene never reaches into it
+backwards. The rule, held everywhere:
 
-**The dice and the table** are plain TypeScript with no browser in them at all:
+- **The store asks by bumping a counter.** `rollRequest`, `layRequest`,
+  `asideRequest`, `shuffleId` — components watch these and act when the number
+  changes. The store never calls into a component.
+- **The component reports back by calling an action.** `settle()` for a landed
+  die, `settleCard()` for a turned card, `landCoin()` and `turnHighLow()` for a
+  decided bet.
+
+Both game modes run through one pipeline. `currentEntry()` in `lib/store.ts` is
+the seam: it returns the position on the table whichever object produced it, so
+one action bar, one announcer and one history serve a die and a deck of cards
+without either knowing about the other.
 
 ```
-src/physics.ts   the world, the felt, the rails, what things are made of
-src/throw.ts     the velocity and spin a gesture hands to the solver
-src/settle.ts    when a throw counts as over
-src/faces.ts     which face is up, read from the quaternion
-src/framing.ts   how big the table is and where the camera stands
-src/roll.ts      Dice owns the world and the clock; Roller owns one die
-src/cheat.ts     loading the dice without touching the throw
+app/page.tsx          server component, ships no client JS of its own
+components/DiceApp    the client tree — chrome, layers, the one <Canvas>
+components/scene/     everything inside the canvas (Die, Coin, Tray, Props)
+components/ui/        everything outside it
+lib/store.ts          all state, all rules
+lib/dice/             solids, atlas, face detection, the deck
+lib/cards/            the draw pile and the playing deck the bet uses
+lib/scene/            framing, lighting, physics constants, props placement
+scripts/              the headless checks (see below)
 ```
 
-**Everything you can see** is on top of that:
+### Adding a position
 
-```
-src/scene.ts       renderer, lights, felt, rails, the camera
-src/die.ts         the rounded cube, printed with pictures or with words
-src/present.ts     where a die goes to be read, solved from the screen
-src/positions.ts   what each face of the light die is called
-src/locations.ts   what each face of the dark die is called
-src/settings.ts    the one preference the page keeps
-src/ui.ts          the placard, and the chrome around the canvas
-src/menu.ts        the menu nobody is meant to find
-src/main.ts        the loop, and the only file that knows about both halves
+This is the developer's half — see *Writing your own* below for the half that
+does not need one. Drop `image-14.png` into `public/dice/` and it is in play —
+deck membership is discovered from the files themselves, not declared. To give it a name, an
+intensity and a unit, add an entry to `POSITIONS` in `lib/dice/deck.ts`; without
+one it still works, it is just announced by number and counted in time.
+
+```ts
+"image-13": { name: "Something", intensity: 2, measure: "strokes" },
 ```
 
-The loop only draws when there is something to draw. Between throws the table
-is still — same dice, same light, same camera — so it stops rendering a second
-and a half after the last thing moved, and starts again the moment anything
-does. A screen dense enough to need no multisampling does not get any, either.
-Both are for the phone: a phone drawing a picture that is not changing gets
-warm, and a warm phone is a slow one by the next throw.
+`measure` is how the gamble counts that position — `"strokes"` for most of them,
+`"time"` for the slow and mutual ones where there is no stroke to count. It is a
+property of the position rather than a setting because the right unit is a fact
+about what you are doing, not a preference. Absent means time, which applies to
+anything.
 
-The split is not tidiness. `scripts/verify-roll.ts` imports the first half and
-throws the dice thousands of times with no screen attached, which only proves
-something about the page because it is running the page's own code.
+`DECK_SLOTS` (16) is the ceiling on *built-in* artwork, not on the deck. The die
+never has more faces than the deck has positions — `largestDieFor()` steps it
+down instead, because a die that has to print the same position twice is lying
+about how many outcomes it has.
 
-### Four rules that hold it together
+### Writing your own
 
-**The order of the faces is one fact, written once.** `FACE_VALUES` in
-`faces.ts` is in three.js's box-group order — `+X, -X, +Y, -Y, +Z, -Z` — and it
-is the array `die.ts` builds its materials from *and* the array the face reading
-searches. There is no second table mapping a value to a picture, so the physics
-and the artwork cannot drift apart. Both dice use it.
+The other half of the deck, and the only half that does not need a developer.
+The positions panel has a **Write one of your own**: a name, a line, how quickly
+it ends and how it is counted — the same four things a built-in carries, so it
+behaves like one. It has no artwork and never will, so it wears a monogram drawn
+from its initial, the way the Joker wears a sparkle.
 
-**Only one die is ever on the table.** The dice are thrown one at a time, and
-the one already lying there is taken out of the world on the tick the next one
-is released — `lift()` in `physics.ts`, on the same line as the throw. Nothing
-is in the way, nothing is bounced off, and a throw is aimed at an empty felt.
-What you see is the picture catching up: the die that has gone fades out over a
-quarter of a second, which is a good deal less than the half-second the new one
-spends in the air, so there is nothing to wait for. A die that has been read is
-frozen while it sits there, so what is printed on the placard is what the table
-is showing until the moment it leaves — and while it is up at the camera being
-read, the body has never moved off the spot it landed on, which is where "lay it
-down" puts the picture of it back.
+They live under `own-` ids, sit between the built-ins and the wilds in the deck,
+and are unlimited — `DECK_SLOTS` does not apply to them, since there is no file
+and no slot. **Roll from** switches the die between everything, only yours, and
+only the built-ins.
 
-**The card opens out of the face, not over it.** The placard is laid out first
-and asked where its card is going to be; the die is then sent to that patch of
-screen, and the card grows out of the face it finds sitting there. Both sides
-work from the one measurement — `prepare()` in `ui.ts` hands `holdFor()` in
-`present.ts` a rectangle, and the fraction of that rectangle the die covers is
-set in one place and passed to the stylesheet as a custom property. Nothing is
-tuned to a screen size, so a phone turned sideways, a card that has stepped down
-to make room for a second one, and a window dragged wider all take the die with
-them.
+Exclusions and favourites persist now too. Switching off the ones you never want
+is a standing opinion, not a mood, and being made to restate it every evening
+was the app arguing with you.
 
-**The dice always answer.** If one stops leaning on a rail or perched on its
-neighbour, it is knocked loose and allowed to fall again, three times. If it
-still will not lie flat it is laid flat on the face it was nearest to showing,
-and the scene eases it there rather than cutting. A page whose one job is
-deciding something must never reply "it is on its edge".
+`lib/dice/own.ts` owns the record and its validation; `lib/prefs.ts` owns the
+four keys. Adding a fifth means honouring the rules stated in that file's
+header — every access in `try/catch`, and the default stored as *absence*.
 
-### The reveal
+Worth knowing: what you write is stored in clear text in `localStorage`, on the
+device that wrote it. There is no server to put it behind and no copy anywhere
+else — which also means clearing site data is a deletion with no undo. The key
+is named as dully as the others so it does not announce itself, but that is
+obscurity, not protection. See the note in `readOwn`.
 
-The rise is `present()` in `die.ts` and it touches no physics at all. There is
-nothing else on the felt for a raised die to still be part of, so the body stays
-frozen where it landed and this is a picture of it leaving — which is why it can
-be a plain interpolation rather than a kinematic body fighting gravity. It takes
-just over half a second, on a curve that leaves quickly and arrives gently, with
-one extra revolution wound in at the start and unwound across the way up. A turn
-of 2π is the identity, so both ends of the move are exactly where they would
-have been without it; all it does is make the arrival a small performance.
+### Discreet mode
 
-`prefers-reduced-motion` skips the flight rather than slowing it. The die arrives
-and the card opens with it: a reveal that never happened would be worse than one
-that happened at once.
+The one piece of state that survives a reload, and the one feature whose failure
+is not cosmetic. It swaps the artwork for plain numerals, the room for a green
+baize table, and drops card mode entirely — a card carries its position printed
+on its face, so there is no plain version of one.
 
-### Adding a position or a place
+What it does **not** do is change the deck: nothing is removed from play,
+exclusions and favourites are untouched, and turning it off gives back the app
+you left, mid-session. `verify:discreet` asserts that nothing about what the app
+is can leak while it is on.
 
-Drop a PNG into `src/assets/dice/` and add a line to `POSITIONS` in
-`src/positions.ts` naming it; places are text alone, so a new one is just a line
-in `src/locations.ts`. Either die has six faces, though, so a seventh entry
-means deciding what to do about that — it is not a drop-in.
+The cover extends outside the app too, and those surfaces are the ones worth
+being careful about because they are visible without it being open: the title
+and description in `app/layout.tsx`, the same strings again in
+`app/manifest.ts`, and the home-screen icon (`app/icon.svg`, and
+`app/apple-icon.tsx` which regenerates it as a PNG for iOS). All of it is a
+plain dice roller — no plum, no brand colour, no name. If you change one, change
+all of them.
 
-### The loaded dice
+## Checks
 
-Three fast taps on the wordmark open a menu with the twelve faces on it — or
-one press held on it, since tapping twice quickly is also how a phone is told
-to zoom and some of them take it as read before the third tap lands. Tick some
-faces, and the dice land on those from then on. It is meant to be invisible to
-anyone watching the table, which rules out every obvious way of doing it: a die
-that is placed, eased, slowed or spun on the way down is a die you can see is
-being helped.
+There is no browser in the loop here, which is why these exist: the failures
+worth catching in this app are geometric, statistical or state-machine bugs that
+you cannot see by looking, and several of them survived a long time precisely
+because they were only *slightly* wrong on screen.
 
-So the throw is not touched at all. The die is released exactly as always, that
-throw is run to its end in the same tick with nothing drawn — `foretell` in
-`roll.ts`, a couple of hundred steps and well under a millisecond — the die is
-put back on the same throw, and the *printing* is turned round so the wanted
-face is the one the throw was already going to finish on. Then it rolls, for
-real, and everything anybody sees is what the solver did.
-
-It works because a die is a symmetric solid: which picture is on which face has
-no bearing on how it falls. The turn is one of the twenty-four ways a cube can
-be set down, so the shape, the shadow and the sum of seven across opposite
-faces all survive it. It is the same die, held a different way round, at the
-one instant its pose jumps anyway.
-
-Two things had to become true first. A throw is now a `Wound` — a release, a
-starting orientation, and a seed the knocks come from — so the same throw made
-twice is the same throw rather than one like it. And `thaw` measures the die
-square and at the origin, because the solver reads a body's inertia off the box
-its shape takes up in the *world*: a die measured while lying at an angle, or
-far from the middle of the table, was handed a different one every time. Fixing
-that made the honest dice better too — they settle sooner and land cocked a
-third as often as they used to.
-
-Nothing is written down. Close the page and it is a fair die again. The one and
-only thing the page does remember is in `settings.ts`, and it is the switch
-under the wordmark: one die or two, off by default. That is a preference rather
-than a secret.
-
-## Checking it
+They import the production code rather than re-implementing it —
+`verify-bounds` calls the real `computeTrayBounds()`, `verify-distribution`
+throws the real convex hulls through Rapier in Node — so a check cannot drift
+away from the thing it checks.
 
 ```bash
-pnpm verify        # thousands of throws, headless
-pnpm verify:cheat  # the same again, with the dice loaded
-pnpm typecheck
-pnpm build
+pnpm run verify           # all seventeen, about fifteen seconds
+pnpm run verify:geometry  # or any one of them alone
 ```
 
-`pnpm verify` runs the real `Dice` on the felt each real viewport produces, in
-the real order — a position, then a place, then a position again, each onto a
-table the other die has just been lifted off, which is what the page does.
+| Check | What it holds |
+| --- | --- |
+| `geometry` | Die solids are structurally sound — planar faces, outward normals, no duplicate values |
+| `bounds` | The tray walls stay inside the camera's view at every viewport shape |
+| `faces` | Face artwork resolves, and isn't stroke-only or a solid blob |
+| `pool` | The spotlight actually pools on the play area |
+| `floor` | The felt runs off every side of the frame, at the density the folds need |
+| `deal` | Every face of every die gets something dealt to it |
+| `pile` | Card mode draws through the deck without repeating |
+| `stake` | The gamble is counted in the position's own unit, and the floors hold |
+| `modes` | The die and the cards really do share one result pipeline |
+| `cards` | The card stack centres on the viewport and never collides with the controls |
+| `props` | The scenery never gets in the die's way |
+| `hue` | The felt is still the colour it was authored to be |
+| `discreet` | The disguise holds — no artwork, no names, no candlelight |
+| `distribution` | 1000 real throws per solid: no dead face, no dominant one, nothing unsettled |
+| `loaded` | Favourites actually bias the die, and by roughly how much |
+| `fix` | The forecast names the face the die actually stops on |
+| `coin` | The flip cannot loop and cannot show the wrong face |
 
-It fails on any of four things: a throw that never stops, a die that leaves the
-table, a die that has to be laid flat too often, and a die that favours a face
-(chi-square, p = 0.001). It takes well under a second, so there is no reason not
-to run it after touching anything in the first half of the list above.
+`distribution` and `loaded` take `ROLLS` from the environment if you want to run
+them harder:
 
-`pnpm verify:cheat` runs the same throws with `rig()` in the middle of them, and
-fails on three things: a loaded throw that did not land on one of the faces it
-was told to, the *solid* favouring a side while it is being loaded — the
-printing may be rigged, the physics may not — and a throw thrown twice from the
-same wound state going anywhere different, compared step by step rather than
-just at the end. Three thousand loaded throws, no misses.
+```bash
+ROLLS=20000 pnpm run verify:distribution
+```
 
-The numbers they are currently holding: a throw settles in about two seconds,
-the slowest in four and a half, and fewer than one throw in five hundred has to
-be laid flat — a tenth of what it was when the second die was still lying on the
-felt to be landed on. Over twenty thousand throws, neither die left the table or
-favoured a face.
+CI runs typecheck, lint, build and all seventeen on every push.
+
+## Conventions
+
+- **Comments explain why, not what**, and they record approaches that were tried
+  and removed — the deleted vignette, the `brightness(1)` trap that silently
+  kills `preserve-3d`, the two earlier throw implementations. Those notes are
+  load-bearing; several of them exist because the same mistake was made twice.
+- **Tuned constants say what they were tuned against.** `LOAD_MASS` and
+  `LOAD_REACH` in `Die.tsx` cite `verify:loaded`, because no amount of reading
+  gets you to those numbers.
+- **No Prettier here.** No config and no dependency — don't run it across the
+  tree.

@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Version comes from `packageManager` in package.json, so it cannot drift
+      # from what the lockfile was written by.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Build
+        run: pnpm run build
+
+      # The seventeen headless checks — geometry, framing, dealing, both modes,
+      # and the physics run through Rapier in Node. Around fifteen seconds all
+      # told, which is why they run on every push rather than on a schedule.
+      #
+      # Last because it is the slowest of the four and the least likely to fail
+      # on a change that the three above would already have caught.
+      - name: Verify
+        run: pnpm run verify

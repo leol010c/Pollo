@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Dice Throw">
+  <!--
+    The cover, drawn.
+
+    This is the icon on a home screen, which is the most public surface the app
+    has — more public than the title, because it is visible without the phone
+    being unlocked. So it is a die and nothing else: no plum, no brand pink, no
+    warmth. Those are the colours of the room inside, and every one of them
+    would be a hint on a screen whose entire job is not to give one.
+
+    A neutral near-black ground and a bone-coloured d6 showing five. Five
+    because it is symmetric under rotation — an icon that is subtly the wrong
+    way up reads as sloppy, and nobody can say why.
+  -->
+  <rect width="512" height="512" rx="114" fill="#1f1d20"/>
+  <rect x="106" y="106" width="300" height="300" rx="64" fill="#f2ece4"/>
+  <g fill="#26232a">
+    <circle cx="181" cy="181" r="26"/>
+    <circle cx="331" cy="181" r="26"/>
+    <circle cx="256" cy="256" r="26"/>
+    <circle cx="181" cy="331" r="26"/>
+    <circle cx="331" cy="331" r="26"/>
+  </g>
+</svg>
