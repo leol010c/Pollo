@@ -300,6 +300,20 @@ interface DiceState {
    */
   deck: DeckEntry[];
   /**
+   * Whether the built-in half of the deck has landed.
+   *
+   * `deck` cannot answer this. The hand-written half is read from localStorage
+   * during the mount effects and composes a deck of its own, so a non-empty
+   * `deck` may still be a deck with no pictures in it — and for somebody who
+   * has written nothing, an *empty* deck is equally a deck that has simply not
+   * arrived yet. The two are indistinguishable by length, which is how fitDie
+   * came to clamp a saved d12 down to a d4 against a deck of nothing.
+   *
+   * So the arrival is recorded rather than inferred. Only `setDeck` sets it,
+   * because only the artwork probe can.
+   */
+  deckIn: boolean;
+  /**
    * Positions ruled out, by deck id.
    *
    * Stored as the exclusions rather than the inclusions so that adding a new
@@ -726,6 +740,7 @@ export const useDiceStore = create<DiceState>((set, get) => ({
   rollRequest: 0,
   layRequest: 0,
   deck: [],
+  deckIn: false,
   disabled: [],
   dealId: 0,
   pile: [],
@@ -1386,6 +1401,20 @@ export const useDiceStore = create<DiceState>((set, get) => ({
     // each caller below splices instead.
     const deck = setOwnEntries(get().own.map(toEntry));
     set({ deck });
+
+    /*
+     * The half-built deck is put into state and then left alone.
+     *
+     * The first recompose of a load is the one restoreOwn does in the mount
+     * effects, and at that point this deck is the hand-written half on its own.
+     * It belongs in state — the panel has to be able to show it — but it is not
+     * a deck to measure anything against: fitDie refuses it (see `deckIn`), and
+     * dealing a hand onto it bumps dealId over a deck that is about to be
+     * replaced wholesale when the artwork lands. setDeck does both jobs the
+     * moment the deck is whole.
+     */
+    if (!get().deckIn) return;
+
     get().fitDie();
     get().deal();
   },
@@ -1555,7 +1584,9 @@ export const useDiceStore = create<DiceState>((set, get) => ({
       entries.filter((entry) => entry.kind !== "wild" && !isOwn(entry.id)),
       entries.filter((entry) => entry.kind === "wild"),
     );
-    set({ deck });
+    // Recorded here and nowhere else: this is the one arrival that means the
+    // deck is whole. See `deckIn`, and the guard at the top of fitDie.
+    set({ deck, deckIn: true });
     get().fitDie();
     get().deal();
     // The deck arrives asynchronously, well after the first render, so the pile
@@ -1576,6 +1607,23 @@ export const useDiceStore = create<DiceState>((set, get) => ({
    * on would silently undo a deliberate choice of solid.
    */
   fitDie: () => {
+    /*
+     * Nothing to fit to until the pictures are in.
+     *
+     * This runs on every recompose, and the first recompose of a load happens
+     * in the mount effects, when the hand-written half has been read and the
+     * artwork probe has not finished — so the deck at that moment is whatever
+     * somebody typed, which for most people is nothing at all. Fitting to that
+     * is fitting to an empty deck: `largestDieFor(0)` is a d4, and since this
+     * only ever shrinks, the real deck arriving a moment later could not undo
+     * it. Every load came up as a d4, whatever had been saved.
+     *
+     * Deliberately not a `deck.length === 0` guard, which would let the same
+     * thing happen one position at a time to anybody who *has* written some.
+     * See `deckIn`.
+     */
+    if (!get().deckIn) return;
+
     const { dieType } = get();
     // Counted through inPlay() rather than as deck minus disabled. Those were
     // the same number for as long as exclusions were the only filter; the pool
@@ -1958,10 +2006,13 @@ export const useDiceStore = create<DiceState>((set, get) => ({
    * every case used to pay.
    *
    * Refuses once the deck is in, which is what keeps "at startup" true rather
-   * than merely intended.
+   * than merely intended. Measured by `deckIn` and not by `deck.length`: the
+   * hand-written half puts entries into `deck` during the mount effects, and a
+   * length test would read that as "the deck is in" and throw away the saved
+   * solid of anybody who has written a position.
    */
   restoreDieType: (type) => {
-    if (get().deck.length > 0) return;
+    if (get().deckIn) return;
     if (!DIE_TYPES.includes(type as DieType)) return;
     if (type === get().dieType) return;
     set({ dieType: type as DieType });

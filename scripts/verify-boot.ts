@@ -37,7 +37,8 @@
  * Run with `npm run verify:boot`.
  */
 import { useDiceStore } from "../lib/store";
-import type { DeckEntry } from "../lib/dice/deck";
+import { setBuiltinEntries, type DeckEntry } from "../lib/dice/deck";
+import type { OwnPosition } from "../lib/dice/own";
 import { toEntry } from "../lib/dice/own";
 import { DIE_SIDES, DIE_TYPES, type DieType } from "../lib/dice/types";
 
@@ -65,11 +66,28 @@ function deck(size: number): DeckEntry[] {
  * resetting everything would mean restating the initial state here, and a copy
  * of it would go stale.
  */
-function boot(saved: string | null, entries: DeckEntry[]) {
+function boot(saved: string | null, entries: DeckEntry[], written: OwnPosition[] = []) {
   const store = useDiceStore;
+
+  /*
+   * The deck module is a singleton too, and it is the half of a cold start the
+   * store cannot reset.
+   *
+   * It keeps the built-in entries so that a later edit to a hand-written
+   * position recomposes over the same pictures. That is right in the app and
+   * wrong here: left alone, the pictures from the *previous* boot in this
+   * process are still registered, so restoreOwn composes a full deck and the
+   * half-built one that a real first load goes through never happens. Every
+   * check below it would then be passing on a state the app never reaches.
+   */
+  setBuiltinEntries([], []);
+
   store.setState({
     dieType: "d6",
     deck: [],
+    deckIn: false,
+    own: [],
+    pool: "all",
     disabled: [],
     dealId: 0,
     history: [],
@@ -91,11 +109,23 @@ function boot(saved: string | null, entries: DeckEntry[]) {
   //    resolved and therefore before any die exists.
   if (saved) store.getState().restoreDieType(saved);
 
+  /*
+   * 2. And the rest of those effects, in the order DiceApp declares them.
+   *
+   * This used to be left out, and leaving it out is what let the bug below
+   * through: restoreOwn composes a deck from the hand-written half alone —
+   * nothing, for most people — and everything downstream of it was then
+   * measuring the die against a deck of nothing. A boot without it is not a
+   * boot, it is the half of one that happened to work.
+   */
+  store.getState().restoreCuration([], []);
+  store.getState().restoreOwn(written, "all");
+
   // The die the scene will build, captured at the last moment before the deck
   // can influence it. This is the value the user actually watches fall.
   const onMount = store.getState().dieType;
 
-  // 2. The deck, which arrives over the network some time later. `setDeck` fits
+  // 3. The deck, which arrives over the network some time later. `setDeck` fits
   //    the die to it and deals.
   store.getState().setDeck(entries);
 
@@ -187,7 +217,7 @@ function boot(saved: string | null, entries: DeckEntry[]) {
  */
 {
   const store = useDiceStore;
-  store.setState({ dieType: "d6", deck: deck(13), disabled: [] });
+  store.setState({ dieType: "d6", deck: deck(13), deckIn: true, disabled: [] });
   store.getState().restoreDieType("d12");
   report(
     store.getState().dieType === "d6",
@@ -238,13 +268,13 @@ function boot(saved: string | null, entries: DeckEntry[]) {
       .join();
 
   // Storage first, then the artwork.
-  store.setState({ deck: [], own: [], pool: "all", disabled: [], dieType: "d6" });
+  store.setState({ deck: [], deckIn: false, own: [], pool: "all", disabled: [], dieType: "d6" });
   store.getState().restoreOwn(written, "all");
   store.getState().setDeck([...deck(13), ...written.map(toEntry)]);
   const storageFirst = ids();
 
   // Artwork first, then storage.
-  store.setState({ deck: [], own: [], pool: "all", disabled: [], dieType: "d6" });
+  store.setState({ deck: [], deckIn: false, own: [], pool: "all", disabled: [], dieType: "d6" });
   store.getState().setDeck(deck(13));
   store.getState().restoreOwn(written, "all");
   const artworkFirst = ids();
@@ -260,6 +290,50 @@ function boot(saved: string | null, entries: DeckEntry[]) {
   report(
     store.getState().deck.filter((entry) => entry.id.startsWith("own-")).length === 2,
     "both hand-written positions reached the deck",
+  );
+}
+
+// --- A saved die survives the half-deck the mount effects compose ------------
+
+/*
+ * The bug this section was added for, and the one the app actually shipped with.
+ *
+ * The hand-written half is read from localStorage in a mount effect, and
+ * restoreOwn composes a deck out of it immediately — long before the artwork
+ * probe finishes. For anybody who has never written a position that deck is
+ * empty, and `largestDieFor(0)` is a d4. fitDie ran against it, shrank the die
+ * to fit a deck of nothing, and because it only ever shrinks, the real deck
+ * arriving a moment later could not put it back. Every load came up as a d4,
+ * whatever had been chosen — which read as the saved solid not being saved at
+ * all.
+ *
+ * Both halves are checked, because the empty-deck case and the short-deck case
+ * fail for the same reason and a guard that only covers the first one leaves
+ * anybody with two hand-written positions in exactly the same hole.
+ */
+{
+  const { onMount, final } = boot("d12", deck(13));
+  report(
+    onMount === "d12" && final === "d12",
+    `a saved d12 survives a boot with nothing hand-written — built ${onMount}, ends ${final}`,
+  );
+}
+
+{
+  const written: OwnPosition[] = [
+    {
+      id: "own-cccccccccc",
+      name: "Against the door",
+      description: "Neither of you reaches for the handle.",
+      intensity: 3 as const,
+      measure: "strokes" as const,
+      order: 0,
+    },
+  ];
+  const { onMount, final } = boot("d12", [...deck(13), ...written.map(toEntry)], written);
+  report(
+    onMount === "d12" && final === "d12",
+    `a saved d12 survives a boot with one hand-written position — built ${onMount}, ends ${final}`,
   );
 }
 
