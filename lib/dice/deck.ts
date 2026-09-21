@@ -137,8 +137,8 @@ export const POSITIONS: Record<
   },
   // Seated and close rather than driving — there is no stroke to count.
   "image-5": {
-    name: "Lotus",
-    description: "Wrapped up tight, barely moving. Whoever breaks eye contact loses.",
+    name: "Eating Her Out",
+    description: "Her on her back, legs open and pulled up. He kneels between them, face buried, not coming up until she makes him.",
     intensity: 1,
     measure: "time",
   },
