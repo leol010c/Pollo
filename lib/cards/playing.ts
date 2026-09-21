@@ -104,3 +104,73 @@ export function calledRight(
     ? next.rank > lying.rank
     : next.rank < lying.rank;
 }
+
+/**
+ * The chance each call has of winning, off the cards nobody has seen.
+ *
+ * Not a table. The shoe is dealt without replacement and survives between bets
+ * (see `shoe` in the store), so by the fourth call of a run the odds genuinely
+ * are not the ones a fresh deck would give — and these are the real ones,
+ * counted over what is actually left. Counting cards works in this app, which
+ * is a strange and good thing for it to be able to say.
+ *
+ * `unseen` is every card the caller has not been shown, which is the face-down
+ * card *plus* the rest of the shoe. The face-down one belongs in there: it was
+ * dealt off the top and is exactly as unknown as the forty under it. Leaving it
+ * out would be computing the odds of a card that had already been excluded from
+ * the population it was drawn from.
+ *
+ * ## Why these two do not add up to one
+ *
+ * A match wins — see calledRight, which explains why. So a tie is counted for
+ * *both* sides and the two numbers sum to one plus the tie rate. On a seven off
+ * a full shoe that is 52.9% and 52.9%, and it is not an error: they are two
+ * separate questions, each asking what this call would do, and a card that
+ * matches would answer yes to either.
+ */
+export interface Odds {
+  higher: number;
+  lower: number;
+}
+
+export function oddsFor(lying: PlayingCard, unseen: PlayingCard[]): Odds {
+  if (unseen.length === 0) return { higher: 0, lower: 0 };
+
+  let higher = 0;
+  let lower = 0;
+  for (const card of unseen) {
+    // Ties are added to both, deliberately. See the note above.
+    if (card.rank >= lying.rank) higher++;
+    if (card.rank <= lying.rank) lower++;
+  }
+
+  return { higher: higher / unseen.length, lower: lower / unseen.length };
+}
+
+/**
+ * What a call pays, as a multiplier on the pot.
+ *
+ * The inverse of its chance, which is the fair price and therefore the only one
+ * worth charging: this app has no house, and `calledRight` already argues at
+ * length that a bet the app itself offers you should not carry an edge against
+ * you. Ties winning tips it a few percent toward the caller, which is the same
+ * thumb on the same side of the same scale.
+ *
+ * Nothing needs balancing on top of it, because the deck does the balancing. A
+ * near-certain call pays ×1.00 and openly admits it is not a bet; a seven pays
+ * ×1.89 whichever way you go, so a run that lasts has to take a real risk
+ * whether or not the person taking it wanted one.
+ *
+ * A call that cannot win pays nothing rather than infinity — it is not a long
+ * shot, it is a card that is not in the shoe, and the button offering it is
+ * disabled rather than priced.
+ */
+export function payoutFor(chance: number): number {
+  if (chance <= 0) return 0;
+  return 1 / chance;
+}
+
+/** The pot, as it is printed: two decimals, and never "×1.0". */
+export function potLabel(pot: number): string {
+  return `×${pot.toFixed(2)}`;
+}

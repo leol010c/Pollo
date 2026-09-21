@@ -166,14 +166,24 @@ export const BET_CARD_MIN_REM = 6.5;
 /**
  * The vertical space the two calls need, in rem.
  *
- * ~108px: the Higher/Lower row (48) + the line above it saying what is at stake
- * (~20) + 8px of gap + 8px of top padding + up to 24px of home-indicator inset.
+ * ~132px: the call row (56) + the line above it saying what is at stake, which
+ * wraps to two on a narrow screen (~36) + 8px of gap + 8px of top padding + up
+ * to 24px of home-indicator inset.
+ *
+ * Was 6.75rem, measured against a 48px row and a single line. The run made both
+ * of those wrong in the same stroke: every button carries a second line now —
+ * the odds and the price under "Lower", the rung under "Take ×3.40" — so the
+ * row is 56 and the copy above it is longer. Left at 6.75 the strip simply grew
+ * upward over the cards, because it is anchored to the bottom and reserving
+ * space is the only thing that holds it off them.
  *
  * Doubled in the height term below for the same reason CONTROLS_RESERVE_REM is:
  * the pair is centred on the viewport, so whatever the bottom loses the top has
- * to lose as well or it stops being centred.
+ * to lose as well or it stops being centred. That doubling is also what pays
+ * for the pot and the pips at the top, which need about 3.25rem and are drawn
+ * into the space the centring had already set aside.
  */
-export const CALL_RESERVE_REM = 6.75;
+export const CALL_RESERVE_REM = 8.25;
 
 /**
  * One card of the pair, for a viewport of the given size.

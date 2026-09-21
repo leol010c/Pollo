@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "verify": "tsx scripts/verify-geometry.ts && tsx scripts/verify-bounds.ts && tsx scripts/verify-faces.ts && tsx scripts/verify-pool.ts && tsx scripts/verify-floor.ts && tsx scripts/verify-deal.ts && tsx scripts/verify-pile.ts && tsx scripts/verify-stake.ts && tsx scripts/verify-modes.ts && tsx scripts/verify-cards.ts && tsx scripts/verify-props.ts && tsx scripts/verify-hue.ts && tsx scripts/verify-discreet.ts && tsx scripts/verify-distribution.ts && tsx scripts/verify-loaded.ts && tsx scripts/verify-fix.ts && tsx scripts/verify-coin.ts && tsx scripts/verify-themes.ts && tsx scripts/verify-boot.ts && tsx scripts/verify-own.ts && tsx scripts/verify-source.ts",
+    "verify": "tsx scripts/verify-geometry.ts && tsx scripts/verify-bounds.ts && tsx scripts/verify-faces.ts && tsx scripts/verify-pool.ts && tsx scripts/verify-floor.ts && tsx scripts/verify-deal.ts && tsx scripts/verify-pile.ts && tsx scripts/verify-stake.ts && tsx scripts/verify-modes.ts && tsx scripts/verify-cards.ts && tsx scripts/verify-props.ts && tsx scripts/verify-hue.ts && tsx scripts/verify-discreet.ts && tsx scripts/verify-distribution.ts && tsx scripts/verify-loaded.ts && tsx scripts/verify-fix.ts && tsx scripts/verify-coin.ts && tsx scripts/verify-themes.ts && tsx scripts/verify-boot.ts && tsx scripts/verify-own.ts && tsx scripts/verify-source.ts && tsx scripts/verify-highlow.ts && tsx scripts/verify-run.ts",
     "verify:geometry": "tsx scripts/verify-geometry.ts",
     "verify:distribution": "tsx scripts/verify-distribution.ts",
     "verify:bounds": "tsx scripts/verify-bounds.ts",
@@ -30,7 +30,10 @@
     "verify:themes": "tsx scripts/verify-themes.ts",
     "verify:boot": "tsx scripts/verify-boot.ts",
     "verify:own": "tsx scripts/verify-own.ts",
-    "verify:source": "tsx scripts/verify-source.ts"
+    "verify:source": "tsx scripts/verify-source.ts",
+    "verify:highlow": "tsx scripts/verify-highlow.ts",
+    "verify:run": "tsx scripts/verify-run.ts",
+    "verify:screen": "tsx scripts/verify-screen.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
@@ -59,6 +62,7 @@
     "@types/three": "^0.185.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.12",
+    "puppeteer-core": "^25.11.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.1",
     "typescript": "^5"

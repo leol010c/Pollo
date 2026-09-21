@@ -1,7 +1,7 @@
 "use client";
 
 import { useDiceStore, useSettledBet } from "@/lib/store";
-import { cardLabel } from "@/lib/cards/playing";
+import { cardLabel, potLabel } from "@/lib/cards/playing";
 
 /**
  * The accessible result.
@@ -61,6 +61,30 @@ export function ResultAnnouncer() {
    * It takes priority over the roll below because it is what is happening. The
    * throw or draw a won bet triggers announces itself a moment later on its own.
    */
+  /*
+   * A won call, which settledBet() deliberately does not report.
+   *
+   * The run stops on a win with two moves open, so there is no settled bet to
+   * speak about — and the thing that has actually happened is invisible without
+   * this. A sighted player sees the card turn, the pips fill and the pot climb;
+   * a screen reader user would otherwise get silence and then two buttons whose
+   * labels assume they know what the pot is.
+   *
+   * Ahead of `settled` below for the same reason that block is ahead of the
+   * roll: this is what is happening now.
+   */
+  if (bet?.choosing && bet.call) {
+    return (
+      <p role="status" aria-live="polite" className="sr-only">
+        {`${cardLabel(bet.lying)}, called ${bet.call} — ${cardLabel(
+          bet.next,
+        )}. Called it. The run is ${potLabel(bet.pot)} over ${bet.won} ${
+          bet.won === 1 ? "call" : "calls"
+        }.`}
+      </p>
+    );
+  }
+
   if (settled) {
     /*
      * The two cards, named.
@@ -79,9 +103,9 @@ export function ResultAnnouncer() {
     return (
       <p role="status" aria-live="polite" className="sr-only">
         {settled.kind === "highlow"
-          ? settled.outcome === "won"
-            ? `${cards}Called it — drawing again`
-            : `${cards}Wrong call — they hold a joker and pick the position`
+          ? // Only ever a loss now. A won call is spoken above, and a won *run*
+            // is a ladder PrizeNotice puts on screen and focuses.
+            `${cards}Wrong call — the run is gone, and they pick the position`
           : settled.outcome === "won"
             ? "Coin flip won — rolling again"
             : "Coin flip lost — they hold a joker and pick the position"}

@@ -20,7 +20,10 @@ import {
   CARDS_PER_BET,
   calledRight,
   freshShoe,
+  oddsFor,
+  payoutFor,
   type Call,
+  type Odds,
   type PlayingCard,
 } from "./cards/playing";
 import { setBuiltinEntries, setOwnEntries } from "./dice/deck";
@@ -231,6 +234,112 @@ export interface CoinFlip {
 }
 
 /**
+ * How many calls a run may take before it has to be collected.
+ *
+ * A ceiling rather than a rule against greed. The pot is a product of fair
+ * prices, so a sixth call is not unfair — it is simply a bet that has stopped
+ * being legible: past five the numbers get large enough that nobody is weighing
+ * them any more, and a gamble nobody is weighing is a slot machine.
+ *
+ * It also keeps the whole thing inside a round. This is a bet about one
+ * position somebody is unhappy with, and it should not become the evening.
+ */
+export const RUN_LIMIT = 5;
+
+/**
+ * What a won run can be spent on.
+ *
+ * The ladder, cheapest first, and the reason the run pays in *control* rather
+ * than in a number. A multiplier on a stake would have been less work and it
+ * would have said nothing: this app's currency has never been how much, it has
+ * been who decides. So that is what a run buys back, one rung at a time.
+ *
+ *  - `again`  what a won bet has always bought: the deck draws again.
+ *  - `two`    two positions dealt, and you take either one.
+ *  - `any`    the deck opens and you pick.
+ *  - `theirs` you pick yours, and you hand them one as well.
+ *
+ * The thresholds are round numbers and deliberately not tuned against the odds.
+ * They are a reading of the pot, and the pot is already exactly fair — bending
+ * these to hit some target rate of reaching `theirs` would be putting the edge
+ * back in by the side door, in the one place nobody would look for it.
+ */
+export type PrizeRung = "again" | "two" | "any" | "theirs";
+
+export const PRIZE_LADDER: { rung: PrizeRung; at: number }[] = [
+  { rung: "again", at: 1 },
+  { rung: "two", at: 2 },
+  { rung: "any", at: 4 },
+  { rung: "theirs", at: 8 },
+];
+
+/**
+ * Everything a pot reaches, cheapest first.
+ *
+ * Every rung up to the pot, not only the best one. A run that paid ×6 has
+ * earned the right to pick anything and also the right to simply draw again,
+ * and taking the cheaper thing has to stay available — the whole point of
+ * collecting rather than being paid is that the person collecting decides.
+ */
+export function rungsFor(pot: number): PrizeRung[] {
+  return PRIZE_LADDER.filter((step) => pot >= step.at).map((step) => step.rung);
+}
+
+/**
+ * A won run, collected and waiting to be spent.
+ *
+ * Its own thing rather than a field on HighLow, because by the time this exists
+ * the cards are gone: the bet is over, it was won, and what is left is a
+ * decision about the position deck. Keeping it on the bet would mean the bet
+ * outliving its own settlement — which is exactly the mistake the old joker
+ * token was, a debt the app had to remember because nothing paid it on the spot.
+ */
+export interface Prize {
+  /** What the run paid. */
+  pot: number;
+  /** How many calls it took. Shown, because the run is the story. */
+  calls: number;
+  /** Every rung the pot reaches. See rungsFor. */
+  rungs: PrizeRung[];
+  /**
+   * The rung being spent, once chosen.
+   *
+   * Null while the ladder is still being read. `again` never sits here — it is
+   * spent the instant it is chosen and there is nothing to show for it.
+   */
+  taken: PrizeRung | null;
+  /**
+   * How far through spending it we are.
+   *
+   * A rung is not always one tap. `theirs` is four screens — the ladder, your
+   * pick, their pick, their number — and the difference between the second and
+   * the third is *who the picker is picking for*, which is not recoverable from
+   * `taken` alone. The forfeit has exactly this two-stage shape for exactly this
+   * reason; this is the same idea with two more rooms in it.
+   */
+  stage: "ladder" | "choose" | "pick" | "hand" | "amount" | "done";
+  /** For `two`: the pair dealt to choose between. */
+  offer: DeckEntry[] | null;
+  /**
+   * The position handed to the other person, on the top rung only.
+   *
+   * ## Why this is not the forfeit
+   *
+   * It would have been, and that was the first attempt. The forfeit writes what
+   * it picks into `chosenEntry` — the single position this app has on the table
+   * at any moment — because a forfeit *replaces* your result: they picked, so
+   * that is what is happening. The top rung is the one case where two positions
+   * are live at once, yours and theirs, and routing the second through
+   * forfeitPick silently overwrote the first.
+   *
+   * So it is held here instead, with its own number. `stake` is not touched
+   * either, and for the same reason — there is one of those too, and it belongs
+   * to the position on the table.
+   */
+  handed: { entry: DeckEntry; amount: number | null } | null;
+}
+
+/**
  * The two cards on the felt, from the deal until the result has been seen.
  *
  * The card mode's twin of CoinFlip, and it follows the same rule for the same
@@ -263,6 +372,37 @@ export interface HighLow {
    * over the top of it.
    */
   turned: boolean;
+  /**
+   * How many calls this run has won. Zero until the first card turns.
+   *
+   * The run is one bet, not a series of them. `betId` still bumps per call so
+   * the cards replay, but `betUsed` is spent once at the deal and the pot
+   * carries across — going again is continuing this bet, not taking another.
+   */
+  won: number;
+  /**
+   * The pot, as a multiplier. One at the deal, and the product of every call's
+   * price after that. See payoutFor.
+   */
+  pot: number;
+  /**
+   * Whether the run is stopped at a won call, waiting to be taken or pushed.
+   *
+   * The state the whole run mechanic lives in. `turned` says the card is up;
+   * this says the win has been counted into the pot and the next move belongs
+   * to the person who made the call. A loss never reaches it — a lost run ends
+   * where it stands, which is the entire risk.
+   */
+  choosing: boolean;
+  /**
+   * What this call is being offered at, counted off the cards nobody has seen.
+   *
+   * Stored with the bet rather than recomputed where it is drawn, and that is
+   * not caching. The odds have to be the ones the call was *taken* at: the shoe
+   * moves the instant a card comes off it, so a display that recounted at paint
+   * time would quietly reprice a call while somebody was reading it.
+   */
+  odds: Odds;
 }
 
 interface DiceState {
@@ -468,6 +608,15 @@ interface DiceState {
   /** Bumped per bet. See HighLow. */
   betId: number;
   /**
+   * A won run, collected and not yet spent. See Prize.
+   *
+   * Not part of the app's busy flag, unlike `bet` and `coin`. Those two are a
+   * gamble still deciding what happens to the round; this is the round's result
+   * being chosen, which is the same kind of thing a forfeit is — and `forfeit`
+   * is not in bettingNow() either, for the same reason.
+   */
+  prize: Prize | null;
+  /**
    * The playing deck the bet is dealt from.
    *
    * Drawn without replacement and reshuffled when it runs short, the same way
@@ -629,6 +778,27 @@ interface DiceState {
   /** The turned pair has been shown for long enough to act on. */
   settleHighLow: () => void;
   /**
+   * Takes the run one call further, staking everything it has won.
+   *
+   * The card just turned becomes the card being called against, and one more
+   * comes off the shoe beside it. That is how the game is played on paper and
+   * it is also the honest version: you go on against the card you just won on,
+   * not against a fresh pair chosen after the fact.
+   */
+  runAgain: () => void;
+  /** Stops the run and turns the pot into a prize to spend. */
+  collectRun: () => void;
+  /** Spends the collected run on one rung of the ladder. */
+  spendPrize: (rung: PrizeRung) => void;
+  /** The position taken from a prize that offered a choice of them. */
+  prizePick: (entry: DeckEntry) => void;
+  /** And, on the top rung, the one handed to the other person. */
+  handPick: (entry: DeckEntry) => void;
+  /** How much of it they owe. Kept on the prize, not started as a stake. */
+  handAmount: (amount: number) => void;
+  /** Gives up on a prize without spending it. The round goes on as it was. */
+  clearPrize: () => void;
+  /**
    * The won bet has been read; collect it.
    *
    * The one entry point the notices use, so neither of them has to know which
@@ -758,6 +928,7 @@ export const useDiceStore = create<DiceState>((set, get) => ({
   betPrize: false,
   bet: null,
   betId: 0,
+  prize: null,
   shoe: [],
   forfeit: null,
   chosenEntry: null,
@@ -848,6 +1019,7 @@ export const useDiceStore = create<DiceState>((set, get) => ({
       // either way.
       coin: null,
       bet: null,
+      prize: null,
       betPrize: false,
       chosenEntry: null,
       // No round is in progress on the other side of the switch — the next
@@ -887,6 +1059,7 @@ export const useDiceStore = create<DiceState>((set, get) => ({
       // it rather than landing on a round that no longer exists.
       coin: null,
       bet: null,
+      prize: null,
       betPrize: false,
       chosenEntry: null,
       betUsed: true,
@@ -1207,7 +1380,27 @@ export const useDiceStore = create<DiceState>((set, get) => ({
     const betId = get().betId + 1;
 
     set({
-      bet: { lying, next, call: null, betId, turned: false },
+      bet: {
+        lying,
+        next,
+        call: null,
+        betId,
+        turned: false,
+        choosing: false,
+        // A run starts owing nothing and having won nothing. Both only move
+        // once a card has turned over.
+        won: 0,
+        pot: 1,
+        /*
+         * Priced against the face-down card *and* the rest of the shoe.
+         *
+         * `next` is in that population, which is the subtle part: it has been
+         * dealt but not seen, so it is exactly as unknown as the forty under
+         * it. Pricing against `rest` alone would be quoting odds on a card
+         * already excluded from the pile it came out of. See oddsFor.
+         */
+        odds: oddsFor(lying, [next, ...rest]),
+      },
       betId,
       shoe: rest,
       betUsed: true,
@@ -1235,9 +1428,12 @@ export const useDiceStore = create<DiceState>((set, get) => ({
    */
   guessHighLow: (call) => {
     const bet = get().bet;
-    // Once per bet. A second press while the card is already turning is the
+    // Once per call. A second press while the card is already turning is the
     // same call arriving twice, not a change of mind.
     if (!bet || bet.call !== null) return;
+    // And never while the run is stopped on a win. The pair on screen at that
+    // moment has already been called; the only two moves are take and again.
+    if (bet.choosing) return;
     set({ bet: { ...bet, call } });
   },
 
@@ -1252,31 +1448,278 @@ export const useDiceStore = create<DiceState>((set, get) => ({
   turnHighLow: () => {
     const bet = get().bet;
     if (!bet || bet.call === null || bet.turned) return;
-    set({ bet: { ...bet, turned: true } });
+
+    /*
+     * A wrong call ends the run here, with nothing.
+     *
+     * No pot is written, and that is the whole cost of going on: everything a
+     * run has won rides on every call it makes. From this point the loss is an
+     * ordinary settled bet — settledBet() reads it, ForfeitNotice opens over
+     * it, and the other person picks. Exactly what a single wrong call has
+     * always done, which is the property that makes the first call of a run
+     * still the bet it used to be.
+     */
+    if (!calledRight(bet.call, bet.lying, bet.next)) {
+      set({ bet: { ...bet, turned: true } });
+      return;
+    }
+
+    /*
+     * A right call is counted into the pot at the price it was *offered* at.
+     *
+     * `bet.odds`, captured when the pair was dealt, and not a fresh count: the
+     * card that just turned is now known, so recounting here would price the
+     * call against information the caller did not have. That is not a rounding
+     * difference, it is a different bet.
+     */
+    const pot = bet.pot * payoutFor(bet.odds[bet.call]);
+    const won = bet.won + 1;
+
+    set({ bet: { ...bet, turned: true, won, pot, choosing: true } });
+
+    /*
+     * And at the ceiling there is nothing to choose, so it is collected.
+     *
+     * Inline rather than left for the screen to notice: a run that has run out
+     * of calls is over whether or not anything is looking at it, and a "go
+     * again" that would be refused must never be drawn in the first place. The
+     * table still shows the pair and the pot — collectRun clears `bet`, and
+     * HighLowTable holds its last pair past that for exactly this kind of
+     * moment.
+     */
+    if (won >= RUN_LIMIT) get().collectRun();
   },
+
+  runAgain: () => {
+    const bet = get().bet;
+    // Only from a stopped, won run. Anything else is a press that arrived
+    // between frames.
+    if (!bet || !bet.choosing) return;
+    if (bet.won >= RUN_LIMIT) return;
+
+    /*
+     * The card just won on becomes the card being called against.
+     *
+     * How the game is played on paper, and the honest version of it too: you
+     * go on against a card you have already seen, rather than against a fresh
+     * pair that could have been dealt after you decided to push. Nothing is
+     * re-dealt and nothing is shuffled — one card comes off the shoe and joins
+     * the one already on the felt.
+     */
+    let shoe = get().shoe;
+    if (shoe.length < 1) shoe = freshShoe();
+    const [next, ...rest] = shoe;
+    const lying = bet.next;
+
+    const betId = get().betId + 1;
+
+    set({
+      bet: {
+        lying,
+        next,
+        call: null,
+        betId,
+        turned: false,
+        choosing: false,
+        // Carried, not reset. This is one bet continuing, not a second one —
+        // which is also why `betUsed` is not touched here. It was spent when
+        // the run was opened.
+        won: bet.won,
+        pot: bet.pot,
+        // Repriced, because the shoe has genuinely moved. By the fourth call
+        // these are not the numbers a fresh deck would give, and that is the
+        // point of counting them rather than tabulating them.
+        odds: oddsFor(lying, [next, ...rest]),
+      },
+      betId,
+      shoe: rest,
+    });
+  },
+
+  collectRun: () => {
+    const bet = get().bet;
+    // Nothing to collect on a run that has not won a call. Guarded rather than
+    // assumed, because this is reachable from a tap.
+    if (!bet || bet.won < 1) return;
+    if (!bet.choosing) return;
+
+    const pot = bet.pot;
+
+    set({
+      // The cards are done. HighLowTable keeps its last pair for the exit, the
+      // way it always has — nothing is held here.
+      bet: null,
+      prize: {
+        pot,
+        calls: bet.won,
+        rungs: rungsFor(pot),
+        taken: null,
+        stage: "ladder",
+        offer: null,
+        handed: null,
+      },
+    });
+  },
+
+  spendPrize: (rung) => {
+    const prize = get().prize;
+    if (!prize || prize.taken !== null) return;
+    // The ladder is read from the pot, so a rung that is not on it was never
+    // drawn — but the store does not take the UI's word for what was affordable.
+    if (!prize.rungs.includes(rung)) return;
+
+    /*
+     * The cheapest rung is what a won bet has always bought, so it is spent on
+     * the spot rather than shown.
+     *
+     * `betPrize` before `drawCard`, exactly as the old settleHighLow did it and
+     * for the same reason: drawCard is where a card round gets its bet back,
+     * and this draw is not a new round — it is the prize from the last one. A
+     * draw a bet bought must not be able to buy another bet.
+     */
+    if (rung === "again") {
+      set({ prize: null, betPrize: true });
+      get().drawCard();
+      return;
+    }
+
+    /*
+     * Two positions, dealt to be chosen between.
+     *
+     * Off inPlay() rather than the pile: the pile is the order the deck will
+     * come out in tonight and spending two of it here would cost somebody their
+     * place in it, for a choice that is not a draw. The last position is kept
+     * out for the same reason deal() keeps it out — being offered the thing you
+     * just did, as a prize, reads as the app not listening.
+     */
+    if (rung === "two") {
+      const pool = get().inPlay();
+      const fresh = pool.filter((entry) => entry.id !== get().lastPositionId);
+      const from = fresh.length >= 2 ? fresh : pool;
+
+      const offer: DeckEntry[] = [];
+      const remaining = [...from];
+      while (offer.length < 2 && remaining.length > 0) {
+        const [picked] = remaining.splice(
+          Math.floor(Math.random() * remaining.length),
+          1,
+        );
+        offer.push(picked);
+      }
+
+      // A deck with one position in it cannot offer a choice of two. It falls
+      // back to the rung below rather than drawing a card twice, which is the
+      // only honest thing left to do with it.
+      if (offer.length < 2) {
+        set({ prize: null, betPrize: true });
+        get().drawCard();
+        return;
+      }
+
+      set({ prize: { ...prize, taken: rung, stage: "choose", offer } });
+      return;
+    }
+
+    // `any` and `theirs` both open the picker. What differs is what happens
+    // after it, and that is prizePick's business.
+    set({ prize: { ...prize, taken: rung, stage: "pick" } });
+  },
+
+  prizePick: (landed) => {
+    const prize = get().prize;
+    if (!prize || prize.taken === null || prize.taken === "again") return;
+
+    /*
+     * Their position, on the table, by the same route a forfeit takes.
+     *
+     * Every field below is forfeitPick's, and deliberately so: a position that
+     * arrived by being pointed at is the same kind of result whoever did the
+     * pointing, and currentEntry() is the seam that already exists so no reader
+     * has to know which. The only difference is who chose, and the only place
+     * that shows is the copy.
+     */
+    const landedOn = {
+      chosenEntry: landed,
+      phase: "settled" as const,
+      lastPositionId: landed.id,
+      // The die is parked in the corner behind the cards. A round that ends on
+      // a hand-picked position never throws it, so it is asked back down.
+      layRequest: get().layRequest + 1,
+      value: null,
+      // A result of its own, so it counts as one — and so the reveal replays
+      // rather than silently reusing the frame before it. See forfeitPick.
+      rollId: get().rollId + 1,
+      history: [
+        {
+          id: get().rollId + 1,
+          image: resolvedSource(landed.source),
+          name: landed.name,
+          kind: landed.kind,
+        },
+        ...get().history,
+      ].slice(0, HISTORY_LIMIT),
+    };
+
+    /*
+     * The top rung is not finished yet — there is one to hand over.
+     *
+     * The position just chosen lands as the result exactly as it does on the
+     * rung below, and then the picker opens a second time pointed at the other
+     * person. Nothing about the *result* is pending at that point, which is
+     * deliberate: if they close the app between the two picks, the round they
+     * won is already on the table.
+     */
+    if (prize.taken === "theirs") {
+      set({ ...landedOn, prize: { ...prize, stage: "hand", offer: null } });
+      return;
+    }
+
+    set({ ...landedOn, prize: null });
+  },
+
+  handPick: (entry) => {
+    const prize = get().prize;
+    if (!prize || prize.stage !== "hand") return;
+    set({ prize: { ...prize, stage: "amount", handed: { entry, amount: null } } });
+  },
+
+  handAmount: (amount) => {
+    const prize = get().prize;
+    if (!prize || prize.stage !== "amount" || !prize.handed) return;
+    /*
+     * Kept rather than spent.
+     *
+     * `startStake` is not called, and that is the point of the whole field: the
+     * stake belongs to the position on the table, which is *theirs to do to
+     * you*. This one is yours to hand out, it runs on their time rather than
+     * the app's clock, and a countdown started here would be counting the wrong
+     * person's minutes. PrizeNotice prints it and the round carries it.
+     */
+    set({ prize: { ...prize, stage: "done", handed: { ...prize.handed, amount } } });
+  },
+
+  clearPrize: () => set({ prize: null }),
 
   /**
    * The turned pair has been shown for long enough to act on.
    *
-   * settleCoin, with a draw where the throw is. A win draws again from here —
-   * that is the thing that was bet for — and a loss does nothing at all,
-   * because its notice is already up and stays up until it is acknowledged.
+   * Once the counterpart of settleCoin, and now a much smaller thing: a won
+   * call no longer settles anything by itself, because the run is stopped on it
+   * with two moves open. turnHighLow does the counting; taking and pushing are
+   * taps.
+   *
+   * What is left is the shared entry point keeping its promise. settleBet() is
+   * what every path that clears the screen calls without knowing which gamble
+   * is out, so this has to mean *something* sensible for a card bet — and the
+   * sensible thing is to take the run rather than strand it. A loss does
+   * nothing at all, as it always did: its notice is up and stays up until it is
+   * acknowledged.
    */
   settleHighLow: () => {
     const bet = get().bet;
     if (!bet || !bet.turned || bet.call === null) return;
-    if (!calledRight(bet.call, bet.lying, bet.next)) return;
-
-    /*
-     * The draw is marked as bought before it is asked for, exactly as
-     * settleCoin does it — and for the same reason. drawCard is where a card
-     * round gets its bet back, and this draw is not a new round; it is the
-     * prize from the last one. Marking it here rather than routing around
-     * drawCard is what makes the rule hold for every draw: there is no path to
-     * a card that skips drawCard, and there is no path here that skips this.
-     */
-    set({ bet: null, betPrize: true });
-    get().drawCard();
+    if (!bet.choosing) return;
+    get().collectRun();
   },
 
   settleBet: () => {
@@ -1654,6 +2097,7 @@ export const useDiceStore = create<DiceState>((set, get) => ({
       history: [],
       coin: null,
       bet: null,
+      prize: null,
       betPrize: false,
       chosenEntry: null,
       betUsed: true,
@@ -1949,6 +2393,7 @@ export const useDiceStore = create<DiceState>((set, get) => ({
       // way out, no cards to turn over, and nothing was owed on either yet.
       coin: null,
       bet: null,
+      prize: null,
       betPrize: false,
       chosenEntry: null,
       // The round went with the screen. The next throw starts a new one.
@@ -2097,14 +2542,22 @@ export function settledBet(
   if (s.coin?.landed) {
     return { kind: "coin", outcome: s.coin.outcome, id: s.coin.flipId };
   }
+  /*
+   * A card bet reports only its losses here, and that is not an omission.
+   *
+   * A wrong call ends the run where it stands, which is an ordinary settled bet
+   * and wants the ordinary notice over it. A *right* one settles nothing: the
+   * run is stopped on a win with two moves still open, and the pot, the pair
+   * and both buttons belong on the table where the cards are. So there is
+   * nothing here for WinNotice to open over, and it does not — the win is shown
+   * by HighLowTable, and the collected run by PrizeNotice.
+   *
+   * The coin above is untouched. It has one call, it has no pot, and a won toss
+   * is still exactly the thing WinNotice was written for.
+   */
   if (s.bet?.turned && s.bet.call !== null) {
-    return {
-      kind: "highlow",
-      outcome: calledRight(s.bet.call, s.bet.lying, s.bet.next)
-        ? "won"
-        : "lost",
-      id: s.bet.betId,
-    };
+    if (calledRight(s.bet.call, s.bet.lying, s.bet.next)) return null;
+    return { kind: "highlow", outcome: "lost", id: s.bet.betId };
   }
   return null;
 }

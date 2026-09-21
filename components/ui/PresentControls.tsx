@@ -128,7 +128,7 @@ export function PresentControls() {
         <button
           type="button"
           onClick={openHighLow}
-          title="Call the next card higher or lower — win and the deck draws again, lose and they pick"
+          title="Call the next card higher or lower — keep calling to win more, lose one and they pick"
           className="panel press pointer-events-auto flex h-12 w-full max-w-[22rem] items-center justify-center gap-2 rounded-full text-sm font-medium text-foreground transition-colors hover:text-brand"
         >
           <Spade className="size-4" aria-hidden="true" />

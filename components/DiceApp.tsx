@@ -9,6 +9,7 @@ import { ForfeitNotice } from "@/components/ui/ForfeitNotice";
 import { WinNotice } from "@/components/ui/WinNotice";
 import { CardTable } from "@/components/ui/CardTable";
 import { HighLowTable } from "@/components/ui/HighLowTable";
+import { PrizeNotice } from "@/components/ui/PrizeNotice";
 import { RollHistory } from "@/components/ui/RollHistory";
 import { StatsReadout } from "@/components/ui/Stats";
 import { DieTypePicker } from "@/components/ui/DieTypePicker";
@@ -515,6 +516,10 @@ export function DiceApp() {
           coin leaves the ground, and a coin has one face up. */}
       <WinNotice />
       <ForfeitNotice />
+      {/* And the run's own, which is a ladder rather than a sentence. It sits
+          after the other two deliberately: a collected run is spent over the
+          top of the pair that won it, while HighLowTable is still fading. */}
+      <PrizeNotice />
       <ResultAnnouncer />
       {/* Over everything, and only ever present with `?stats=1`. */}
       <StatsReadout />
